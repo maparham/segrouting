@@ -697,34 +697,36 @@ int findMinimum(TIntV& Frontier, TIntFltH& NIdDistH) {
   return NId;
 }
 
-int GetWeightedShortestPath(
-const PNEANet Graph, const int& SrcNId, TIntFltH& NIdDistH, const TFltV& Attr) {
-  TIntV frontier;
+int GetWeightedShortestPath(const PNEANet Graph, const int& SrcNId,
+		TIntFltH& NIdDistH, const TFltV& Attr) {
+	TIntV frontier;
 
-  NIdDistH.Clr(false); NIdDistH.AddDat(SrcNId, 0);
-  frontier.Add(SrcNId);
-  while (! frontier.Empty()) {
-    const int NId = findMinimum(frontier, NIdDistH);
-    const PNEANet::TObj::TNodeI NodeI = Graph->GetNI(NId);
-    for (int v = 0; v < NodeI.GetOutDeg(); v++) {
-      int DstNId = NodeI.GetOutNId(v);
-      int EId = NodeI.GetOutEId(v);
+	NIdDistH.Clr(false);
+	NIdDistH.AddDat(SrcNId, 0);
+	frontier.Add(SrcNId);
+	while (!frontier.Empty()) {
+		const int NId = findMinimum(frontier, NIdDistH);
+		const PNEANet::TObj::TNodeI NodeI = Graph->GetNI(NId);
+		for (int v = 0; v < NodeI.GetOutDeg(); v++) {
+			int DstNId = NodeI.GetOutNId(v);
+			int EId = NodeI.GetOutEId(v);
 
-      if (! NIdDistH.IsKey(DstNId)) {
-        NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + Attr[EId]);
-        frontier.Add(DstNId);
-      } else {
-        if (NIdDistH[DstNId] > NIdDistH.GetDat(NId) + Attr[EId]) {
-          NIdDistH[DstNId] = NIdDistH.GetDat(NId) + Attr[EId];
-        }
-      }
-    }
-  }
-  return 0;
+			if (!NIdDistH.IsKey(DstNId)) {
+				NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + Attr[EId]);
+				frontier.Add(DstNId);
+			} else {
+				if (NIdDistH.GetDat(DstNId)
+						> NIdDistH.GetDat(NId) + Attr[EId]) {
+					NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + Attr[EId]);
+				}
+			}
+		}
+	}
+	return 0;
 }
 
 int GetWeightedShortestPathTree(const PNEANet Graph, const int& SrcNId,
-		TIntH& Tree, const TStr& WeightAttr) {
+		TIntH& parent, const TStr& WeightAttr) {
 	TIntV frontier;
 	TIntFltH NIdDistH;
 
@@ -737,14 +739,15 @@ int GetWeightedShortestPathTree(const PNEANet Graph, const int& SrcNId,
 			int DstNId = NodeI.GetOutNId(v);
 			int EId = NodeI.GetOutEId(v);
 			int dist = Graph->GetIntAttrDatE(EId, WeightAttr);
+
 			if (!NIdDistH.IsKey(DstNId)) {
 				NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + dist);
 				frontier.Add(DstNId);
-				Tree.AddDat(DstNId, NId);
+				parent.AddDat(DstNId, NId);
 			} else {
-				if (NIdDistH[DstNId] > NIdDistH.GetDat(NId) + dist) {
-					NIdDistH[DstNId] = NIdDistH.GetDat(NId) + dist;
-					Tree[DstNId] = NId;
+				if (NIdDistH.GetDat(DstNId) > NIdDistH.GetDat(NId) + dist) {
+					NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + dist);
+					parent.AddDat(DstNId, NId);
 				}
 			}
 		}

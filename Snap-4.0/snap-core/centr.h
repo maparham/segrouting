@@ -116,8 +116,9 @@ template<class PGraph> void GetHitsMP(const PGraph& Graph, TIntFltH& NIdHubH, TI
 
 /// Dijkstra Algorithm
 /// For more info see:  https://en.wikipedia.org/wiki/Dijkstra%27s_algorithm
+int findMinimum(TIntV& Frontier, TIntFltH& NIdDistH);
 int GetWeightedShortestPath(const PNEANet Graph, const int& SrcNId, TIntFltH& NIdDistH, const TFltV& Attr);
-int GetWeightedShortestPath(const PNEANet Graph, const int& SrcNId, TIntH& Tree, const TStr& WeightAttr);
+int GetWeightedShortestPathTree(const PNEANet Graph, const int& SrcNId, TIntH& parent, const TStr& WeightAttr);
 /////////////////////////////////////////////////
 // Implementation
 template <class PGraph>
