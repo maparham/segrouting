@@ -687,8 +687,8 @@ int findMinimum(TIntV& Frontier, TIntFltH& NIdDistH) {
   int min_index = 0;
   for (int i = 0; i < Frontier.Len(); i++) {
     int NId = Frontier.GetVal(i);
-    if (NIdDistH[NId] < minimum) {
-      minimum = NIdDistH[NId];
+    if (NIdDistH.GetDat(NId) < minimum) {
+      minimum = NIdDistH.GetDat(NId);
       min_index = i;
     }
   }
