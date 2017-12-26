@@ -69,8 +69,12 @@ struct Logger: std::ostream {
 struct Link {
 	const int tail;
 	const int head;
+	const int id;
 	Link(int tail, int head) :
-			tail(tail), head(head) {
+			tail(tail), head(head), id(-1) {
+	}
+	Link(int tail, int head, const MyGraph G) :
+			tail(tail), head(head), id(G->GetEId(tail, head)) {
 	}
 	bool inPath(const Path& p) {
 		mylog << "inPath?\n";
@@ -122,7 +126,7 @@ Path SP(Graph G, MyNode src, MyNode dest) {
 	PRINTF("getSP=%d\n", getSP(G, src, dest, p));
 	return p;
 }
-void printsp(Path& sp) {
+void print_path(Path& sp) {
 	for (int i = 0; i < sp.size() - 1; ++i) {
 		PRINTF("%d,", sp[i]);
 	}
@@ -131,28 +135,28 @@ void printsp(Path& sp) {
 	}
 }
 
-bool inPSpace(MyGraph& G, MyNode node, MyNode S, MyNode F) {
+bool inPSpace(MyGraph G, MyNode node, MyNode S, MyNode F) {
 	Path sp_;
 	int len = getSP(G, S, node, sp_);
 	for (int i = 1; i < sp_.size(); ++i) {
 		if (sp_[i - 1] == S && sp_[i] == F) {
 			PRINTF("%d not in PSpace; ", node);
 			PRINTF("SP(S, %d)=%d: ", node, len);
-			printsp(sp_);
+			print_path(sp_);
 			return false;
 		}
 	}
 	return true;
 }
 
-bool inQSpace(MyGraph& G, MyNode node, MyNode S, MyNode F, MyNode D) {
+bool inQSpace(MyGraph G, MyNode node, MyNode S, MyNode F, MyNode D) {
 	Path sp_;
 	int len = getSP(G, node, D, sp_);
 	for (int i = sp_.size() - 2; i > -1; --i) {
 		if (sp_[i] == S && sp_[i + 1] == F) {
 			PRINTF("%d not in QSpace; ", node);
 			PRINTF("SP(%d,D)=%d: ", node, len);
-			printsp(sp_);
+			print_path(sp_);
 			return false;
 		}
 	}
@@ -178,8 +182,8 @@ void load_graph(const string path, MyGraph& G) {
 //			"Loaded Graph", NodeLabelH);
 }
 
-void compute_SR_table(MyGraph& G, Dest_Link_Table& table) {
-	// TODO iterate over all destinations
+void compute_SR_table(MyGraph G, Dest_Link_Table& table) {
+	//  iterate over all destinations
 	for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
 		int dest = NI.GetId();
 		BackupPaths bp; // for a fixed destination
@@ -199,7 +203,7 @@ void compute_SR_table(MyGraph& G, Dest_Link_Table& table) {
 				continue;
 			}
 			PRINTF("first shortest path weight=%d: ", len);
-			printsp(sp);
+			print_path(sp);
 			if (sp[1] != F) {
 				mylog << "SP not using the link\n";
 				continue;
@@ -210,7 +214,7 @@ void compute_SR_table(MyGraph& G, Dest_Link_Table& table) {
 			len = getSP(G, S, D, sp); // shortest path without (S,F) => post convergence path
 			G->AddIntAttrDatE(EI.GetId(), w, WEIGHTATTR);
 			PRINTF("second shortest path weight=%d: ", len);
-			printsp(sp);
+			print_path(sp);
 			if (len >= INF) {
 				mylog << "no backup path\n";
 				continue;
@@ -231,19 +235,93 @@ void compute_SR_table(MyGraph& G, Dest_Link_Table& table) {
 			PRINTF("p=%d q=%d\n", p, q);
 			//	Assert(QSpace_inf == PSpace_sup + 1 || PSpace_sup == QSpace_inf);
 
-			// deduce by comparing p and q
-			SegmentStack stack = { Segment(p, p) };
-			if (QSpace_inf > PSpace_sup) { // also push a "tunnel link" and q
+			// deduce the necessary segments by comparing p and q
+			SegmentStack stack = { Segment(D, D), Segment(q, q) };
+			if (QSpace_inf > PSpace_sup) { // also push a "tunnel link" and p
 				stack.push_back(Segment(sp[PSpace_sup], sp[PSpace_sup + 1]));
-				if (QSpace_inf > PSpace_sup + 1) { // still need to reach q
-					stack.push_back(Segment(q, q));
+			}
+			stack.push_back(Segment(p, p));
+
+			PRINTF("validating stack for (%d,%d), D=%d\n", S, F, D);
+			for (int i = stack.size() - 1; i > -1; --i) {
+				Segment seg = stack[i];
+				PRINTF("checking segment (%d,%d)\n", seg.first, seg.second);
+				if (seg.first != seg.second) {
+					Assert(seg.first == S || seg.first == stack[i + 1].second);
 				}
 			}
+
 			table[dest][EI.GetId()] = stack;
 			PRINTF("stack size=%d\n", stack.size());
 			Assert(Link(S, F).inPath(SP(G, sp[PSpace_sup + 1], q)) == false); // requires a rigorous proof
 		} // next link
 	} // next destination
+}
+
+int backup_path(MyGraph G, const Link& L, const int D, Dest_Link_Table& table,
+		Path& bp, vector<int>& destinationMap) {
+	PRINTF("computing BP for L=(%d,%d)\n", L.tail, L.head);
+	bp.push_back(L.tail);	// the first SP node
+	int bpLen = 0;
+	SegmentStack stack = table[D][L.id];
+	while (!stack.empty()) {
+		Segment seg = stack.back();
+		PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
+		stack.pop_back();
+		if (seg.first == seg.second) { // an intermediate destination (repair node)
+			int S_ = bp.back();
+			Path sp;
+			bpLen += getSP(G, S_, seg.second, sp);
+			bp.insert(bp.end(), sp.begin() + 1, sp.end()); // append the rest of the shortest path
+			destinationMap.resize(bp.size() - 1, seg.second); // set destination for all the SP out_links
+
+		} else { // a tunnel link
+			PRINTF("seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
+			Assert(seg.first == bp.back());	// the link's tail must be the last node already
+			bp.push_back(seg.second);	// the head node
+//			destinationMap.push_back(seg.second);	// for the tail node
+			bpLen += G->GetIntAttrDatE(G->GetEId(seg.first, seg.second),
+			WEIGHTATTR);
+		}
+	}
+}
+
+void TILFA_double_failure(MyGraph G, Dest_Link_Table& table) {
+	int fail = 0, success = 0;
+	for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
+		int D = NI.GetId();
+		for (TNEANet::TEdgeI EI1 = G->BegEI(); EI1 < G->EndEI(); EI1++) {
+			int S = EI1.GetSrcNId();
+			int F = EI1.GetDstNId();
+			Link L1 = Link(S, F, G);
+			Path bp1;
+			vector<int> destinationMap1;
+			PRINTF("L1=(%d,%d), D=%d: ", S, F, D);
+			int len = backup_path(G, L1, D, table, bp1, destinationMap1);
+			print_path(bp1);
+			Assert(L1.inPath(bp1) == false);
+			// all second failures on the first backup path
+			for (int i = 1; i < bp1.size(); ++i) {
+				Link L2 = Link(bp1[i - 1], bp1[i], G);
+				Path bp2;
+				vector<int> destinationMap2;
+				PRINTF("L2=(%d,%d), D=%d: ", L2.tail, L2.head,
+						destinationMap1[S]);
+				len += backup_path(G, L2, destinationMap1[S], table, bp2,
+						destinationMap2);	// case1: keep the current stack
+				//len += backup_path(G, e2, D, table, bp); // case2: flush the stack down to D
+				print_path(bp2);
+				if (L1.inPath(bp2)) {
+					++fail;
+					PRINTF("++fail=%d\n", fail);
+				} else {
+					++success;
+					PRINTF("++success=%d\n", success);
+				}
+			}
+		}
+	}
+	printf("fail=%d, success=%d\n", fail, success);
 }
 
 int main() {
@@ -275,7 +353,7 @@ int main() {
 		compute_SR_table(G, table);
 		PRINTF("table size=%u\n", table.size());
 
-		//evaluate();
+		TILFA_double_failure(G, table);
 	}
 
 	const TStr inFile =
