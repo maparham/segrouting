@@ -53,19 +53,22 @@ int main() {
 	string path;
 	TILFA tilfa;
 	while (filelist >> path) {
+		if (path[0] == '#') {
+			continue;
+		}
 		PRINTF(" Loading %s\n", path.c_str());
 		tilfa.load_graph(path);
+		tilfa.printInfo();
 
 		Dest_Link_Table table;
 		tilfa.compute_SR_table(table);
 		PRINTF("table size=%u\n", table.size());
 
-		tilfa.eval_double_failure(table);
-	}
+		pair<int, int> res = tilfa.eval_double_failure(table);
+		PRINTF("fail=%d, success=%d, ratio=%f\n", res.first, res.second,
+				(double) res.first / (res.first + res.second));
 
-	const TStr inFile =
-			"/Users/mahmoud/Downloads/weights-dist/3967/latencies.intra",
-			inFile1 = "in.txt";
+	}
 
 //	int randNode = sp[rand() % (sp.size() - 1)];
 //	PRINTF("randNode=%d", randNode);

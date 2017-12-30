@@ -136,24 +136,34 @@ PGraph LoadEdgeListStr(const TStr& InFNm, const int& SrcColId, const int& DstCol
 /// Loads the format saved by TSnap::SaveEdgeList(), where node IDs are strings ##LoadEdgeListStr
 template<class PGraph>
 PGraph LoadWeightedEdgeListStr(const TStr& InFNm, const int& SrcColId,
-		const int& DstColId, const int& WeightColId,
-		const TStr& WeightAttr, TStrHash<TInt>& StrToNIdH) {
+		const int& DstColId, const int& WeightColId, const TStr& WeightAttr,
+		TStrHash<TInt>& StrToNIdH) {
 	TSsParser Ss(InFNm, ssfWhiteSep);
 	PGraph Graph = PGraph::TObj::New();
-	Graph->AddIntAttrE(WeightAttr, 0);
-	int weight;
+	double weight;
+	Graph->AddFltAttrE(WeightAttr, 0);
+	Graph->AddStrAttrN("label", 0);
 	while (Ss.Next()) {
 		const int SrcNId = StrToNIdH.AddKey(Ss[SrcColId]);
 		const int DstNId = StrToNIdH.AddKey(Ss[DstColId]);
 		if (!Graph->IsNode(SrcNId)) {
-			Graph->AddNode(SrcNId);
+			Assert(Graph->AddNode(SrcNId) == SrcNId);
+			Graph->AddStrAttrDatN(SrcNId, Ss[SrcColId], "label");
 		}
 		if (!Graph->IsNode(DstNId)) {
-			Graph->AddNode(DstNId);
+			Assert(Graph->AddNode(DstNId) == DstNId);
+			Graph->AddStrAttrDatN(DstNId, Ss[DstColId], "label");
 		}
 		int EId = Graph->AddEdge(SrcNId, DstNId);
-		if (Ss.GetInt(WeightColId, weight)) {
-			Graph->AddIntAttrDatE(EId, weight, WeightAttr);
+		Assert(Graph->GetEId(SrcNId, DstNId) == EId);
+		if (Ss.GetFlt(WeightColId, weight)) {
+			Graph->AddFltAttrDatE(EId, weight, WeightAttr);
+			Assert(Graph->GetFltAttrDatE(EId, WeightAttr) == weight);
+			Assert(
+					Graph->GetFltAttrDatE(Graph->GetEId(SrcNId, DstNId),
+							WeightAttr) == weight);
+		} else {
+			Assert(false);
 		}
 	}
 	Graph->Defrag();
