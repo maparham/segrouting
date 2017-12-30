@@ -738,7 +738,7 @@ int GetWeightedShortestPathTree(const PNEANet Graph, const int& SrcNId,
 		for (int v = 0; v < NodeI.GetOutDeg(); v++) {
 			int DstNId = NodeI.GetOutNId(v);
 			int EId = NodeI.GetOutEId(v);
-			int dist = Graph->GetIntAttrDatE(EId, WeightAttr);
+			int dist = Graph->GetFltAttrDatE(EId, WeightAttr);
 
 			if (!NIdDistH.IsKey(DstNId)) {
 				NIdDistH.AddDat(DstNId, NIdDistH.GetDat(NId) + dist);
