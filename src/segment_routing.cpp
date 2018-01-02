@@ -7,6 +7,7 @@
 #include <map>
 #include <time.h>
 #include <TILFA.hpp>
+#include <Klaus.hpp>
 
 using namespace std;
 using namespace TSnap;
@@ -36,7 +37,6 @@ void handler(int sig) {
 
 int main() {
 	signal(SIGSEGV, handler); // install our handler
-
 	/* initialize random seed: */
 	srand(time(NULL));
 //	ifstream topgen;
@@ -58,13 +58,12 @@ int main() {
 		}
 		PRINTF(" Loading %s\n", path.c_str());
 		tilfa.load_graph(path);
+		//tilfa.drawGraph(path);
 		tilfa.printInfo();
 
-		Dest_Link_Table table;
-		tilfa.compute_SR_table(table);
-		PRINTF("table size=%u\n", table.size());
+		tilfa.compute_SR_table();
 
-		pair<int, int> res = tilfa.eval_double_failure(table);
+		pair<int, int> res = tilfa.eval_double_failure();
 		PRINTF("fail=%d, success=%d, ratio=%f\n", res.first, res.second,
 				(double) res.first / (res.first + res.second));
 

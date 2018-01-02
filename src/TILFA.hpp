@@ -9,12 +9,18 @@
 using namespace std;
 using namespace TSnap;
 
-//#define __DEBUG__ 1
+#define __DEBUG__ 1
 #ifdef __DEBUG__
 #define PRINTF printf
 #else
 #define PRINTF(format, args...) ((void)0)
 #endif
+
+#define ANSI_COLOR_RESET "\033[0m"
+#define RED(TXT)     MyStr("\033[1;31m" TXT ANSI_COLOR_RESET)
+#define GREEN(TXT)   MyStr("\033[1;32m" TXT ANSI_COLOR_RESET)
+#define YELLOW(TXT)  MyStr("\033[1;33m" TXT ANSI_COLOR_RESET)
+#define BLUE(TXT)    MyStr("\033[1;34m" TXT ANSI_COLOR_RESET)
 
 #define INF numeric_limits<int>::max()/3
 #define WEIGHTATTR "weight"
@@ -27,22 +33,25 @@ typedef PNEANet MyGraph; // undirected graph
 //typedef TPt<TNodeEdgeNet<TInt, TInt> > PGraph;
 typedef vector<int> Path;
 typedef const int MyNode;
+typedef const TNEANet::TEdgeI EdgeI;
 
 typedef pair<int, int> Segment;
 typedef vector<Segment> SegmentStack;
-typedef map<int, SegmentStack> BackupPaths; // key is link id
-typedef map<int, BackupPaths> Dest_Link_Table; // key is destination id
+typedef map<int, SegmentStack> SSMap; // key is EId
+typedef map<int, SSMap> Dest_Link_Table_2D; // key is destination id
+// table for double links
+typedef map<int, SSMap> SSMap_2D; // key is (Eid1,EId2)
+typedef map<int, SSMap_2D> Dest_Link_Table_3D; // key is destination id
 
-struct Logger: std::ostream {
-	template<typename T>
-	Logger& operator <<(const T& x) {
-#ifdef DEBUG
-		std::cout << x;
-		std::cout.flush();
-#endif
-		return *this;
+struct MyStr: string {
+	const string s1;
+	MyStr(const char* s) :
+			s1(s) {
 	}
-} mylog;
+	const char* operator+(const char* s2) {
+		return (s1 + s2).c_str();
+	}
+};
 
 struct Link {
 	const int tail;
@@ -50,6 +59,9 @@ struct Link {
 	const int id;
 	Link(int tail, int head) :
 			tail(tail), head(head), id(-1) {
+	}
+	Link(const TNEANet::TEdgeI& EI) :
+			tail(EI.GetSrcNId()), head(EI.GetDstNId()), id(EI.GetId()) {
 	}
 	Link(int tail, int head, const MyGraph G) :
 			tail(tail), head(head), id(G->GetEId(tail, head)) {
@@ -65,7 +77,11 @@ struct Link {
 };
 
 class TILFA {
+protected:
 	MyGraph G;
+	Dest_Link_Table_2D table2D;
+	Dest_Link_Table_3D table3D;
+	TIntStrH NodeLabelH;
 
 	double edgeWeight(const int u, const int v) {
 		return G->GetFltAttrDatE(G->GetEId(u, v), WEIGHTATTR);
@@ -116,32 +132,36 @@ class TILFA {
 		sp.push_back(src);
 
 		std::reverse(sp.begin(), sp.end());
-		return spLen;
+		return sp.size() > 1 ? spLen : INF;
 	}
 
-	bool inPSpace(MyNode node, MyNode S, MyNode F) {
+	bool inPSpace(MyNode node, const vector<Link>& SF) {
 		Path sp_;
-		double len = getSP(S, node, sp_);
+		double len = getSP(SF[0].tail, node, sp_);
 		for (int i = 1; i < sp_.size(); ++i) {
-			if (sp_[i - 1] == S && sp_[i] == F) {
-				PRINTF("%d not in PSpace; ", node);
-				PRINTF("SP(S, %d)=%d: ", node, len);
-				print_path(sp_);
-				return false;
+			for (int j = 0; j < SF.size(); ++j) {
+				if (sp_[i - 1] == SF[j].tail && sp_[i] == SF[j].head) {
+					PRINTF("%d not in PSpace; ", node);
+					PRINTF("SP(S=%d, %d)=%f: ", SF[0].tail, node, len);
+					print_path(sp_);
+					return false;
+				}
 			}
 		}
 		return true;
 	}
 
-	bool inQSpace(MyNode node, MyNode S, MyNode F, MyNode D) {
+	bool inQSpace(MyNode node, const vector<Link>& SF, MyNode D) {
 		Path sp_;
 		double len = getSP(node, D, sp_);
 		for (int i = sp_.size() - 2; i > -1; --i) {
-			if (sp_[i] == S && sp_[i + 1] == F) {
-				PRINTF("%d not in QSpace; ", node);
-				PRINTF("SP(%d,D)=%d: ", node, len);
-				print_path(sp_);
-				return false;
+			for (int j = 0; j < SF.size(); ++j) {
+				if (sp_[i] == SF[j].tail && sp_[i + 1] == SF[j].head) {
+					PRINTF("%d not in QSpace; ", node);
+					PRINTF("SP(%d,D=%d)=%f: ", node, D, len);
+					print_path(sp_);
+					return false;
+				}
 			}
 		}
 		return true;
@@ -153,16 +173,16 @@ class TILFA {
 		return p;
 	}
 
-	double backup_path(const Link& L, const int D, Dest_Link_Table& table,
-			Path& bp, vector<int>& destinationMap) {
-		PRINTF("computing BP for L=(%d,%d)\n", L.tail, L.head);
+	double backup_path(const Link& L, const SegmentStack& stack, Path& bp,
+			vector<int>& destinationMap) {
+		SegmentStack stack_cpy = stack;
+		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.tail, L.head, stack.size());
 		bp.push_back(L.tail);	// the first SP node
 		double bpLen = 0;
-		SegmentStack stack = table[D][L.id];
-		while (!stack.empty()) {
-			Segment seg = stack.back();
-			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
-			stack.pop_back();
+		while (!stack_cpy.empty()) {
+			Segment seg = stack_cpy.back();
+//			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
+			stack_cpy.pop_back();
 			if (seg.first == seg.second) { // an intermediate destination (repair node)
 				int S_ = bp.back();
 				Path sp;
@@ -171,17 +191,21 @@ class TILFA {
 				destinationMap.resize(bp.size() - 1, seg.second); // set destination for all the SP out_links
 
 			} else { // a tunnel link
-				PRINTF("seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
+//				PRINTF("seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
 				Assert(seg.first == bp.back());	// the link's tail must be the last node already
 				bp.push_back(seg.second);	// the head node
 				//			destinationMap.push_back(seg.second);	// for the tail node
 				bpLen += edgeWeight(seg.first, seg.second);
 			}
 		}
+		Assert(bp.size() != 1);
 		return bpLen;
 	}
 
 public:
+	int nofLinks;
+	int nofNodes;
+
 	void print_path(Path& sp) {
 		for (int i = 0; i < sp.size() - 1; ++i) {
 			PRINTF("%d,", sp[i]);
@@ -197,137 +221,199 @@ public:
 		G = LoadWeightedEdgeListStr<MyGraph>(pathobj, 0, 1, 2, WEIGHTATTR,
 				InStrToNIdH);
 
-		TIntStrH NodeLabelH;
 		for (auto NI = G->BegNI(); NI < G->EndNI(); NI++) {
 			NodeLabelH.AddDat(NI.GetId(), InStrToNIdH.GetKey(NI.GetId()));
 		}
-//	PRINTF("drawing the graph in %s\n",pathobj.GetFPath().CStr());
-//	DrawGViz(G, TGVizLayout::gvlDot, pathobj.GetFPath() + "graph.png",
-//			"Loaded Graph", true);
-//	DrawGViz(G, TGVizLayout::gvlDot, pathobj.GetFPath() + "graph_labeled.png",
-//			"Loaded Graph", NodeLabelH);
+		nofLinks = G->GetEdges();
+		nofNodes = G->GetNodes();
+	}
+
+	void drawGraph(string path) {
+		TStr pathobj(path.c_str());
+
+		PRINTF("drawing the graph in %s\n", path.c_str());
+		DrawGViz(G, TGVizLayout::gvlDot,
+				pathobj.GetFPath() + pathobj.GetFMid() + ".png", "Loaded Graph",
+				true);
+		DrawGViz(G, TGVizLayout::gvlDot,
+				pathobj.GetFPath() + pathobj.GetFMid() + "_labeled.png",
+				"Loaded Graph", NodeLabelH);
 	}
 
 	void printInfo() {
-		int nofLinks = G->GetEdges();
-		int nofNodes = G->GetNodes();
 		PRINTF("%d nodes, %d links\n", nofNodes, nofLinks);
 	}
-	void compute_SR_table(Dest_Link_Table& table) {
-		//  iterate over all destinations
-		for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
-			int dest = NI.GetId();
-			BackupPaths bp; // for a fixed destination
-			table[dest] = bp;
-			for (TNEANet::TEdgeI EI = G->BegEI(); EI < G->EndEI(); EI++) {
-				int S = EI.GetSrcNId();
-				int F = EI.GetDstNId();
-				if (S == dest) { // nothing to do
-					continue;
-				}
-				int D = dest; // iterate on all possible destinations
-				PRINTF("link (%d, %d), D=%d\n", S, F, D);
 
-				Path sp;
-				double len = getSP(S, D, sp);
-				if (len >= INF) {
-					continue;
-				}
-				PRINTF("first shortest path weight=%f: ", len);
-				print_path(sp);
-				if (sp[1] != F) {
-					mylog << "SP not using the link\n";
-					continue;
-				}
+	bool compute_SegmentStack(vector<TNEANet::TEdgeI> EIList,
+			SegmentStack& stack, const int D) {
 
-				const int w = edgeWeight(EI.GetId());
-				setEdgeWeight(EI.GetId(), INF); // cripple the link (S,F)
-				len = getSP(S, D, sp); // shortest path without (S,F) => post convergence path
-				setEdgeWeight(EI.GetId(), w);
-				PRINTF("second shortest path weight=%f: ", len);
-				print_path(sp);
-				if (len >= INF) {
-					mylog << "no backup path\n";
-					continue;
-				}
-				int PSpace_sup = S, QSpace_inf = D;
-				for (int i = 0; i < sp.size() && inPSpace(sp[i], S, F); ++i) {
-					PRINTF("%d in PSpace\n", sp[i]);
-					PSpace_sup = i;
-				}
-				for (int i = sp.size() - 1;
-						i >= PSpace_sup && inQSpace(sp[i], S, F, D); --i) { // search backward for the infimum of QSpace, stop when it touches the PSpace
-					PRINTF("%d in QSpace\n", sp[i]);
-					QSpace_inf = i;
-				}
+		stack.push_back(Segment(D, D));
 
-				MyNode p = sp[PSpace_sup], q = sp[QSpace_inf];
-//				int w1 = edgeWeight(sp[PSpace_sup], sp[PSpace_sup + 1]);
-//				int w2 = edgeWeight(sp[QSpace_inf - 1], sp[QSpace_inf]);
-//				PRINTF("p=%d q=%d; w(p,p+1)=%d, w(q-1,1)=%d\n", p, q, w1, w2);
+		int S1 = EIList[0].GetSrcNId();
+		int F1 = EIList[0].GetDstNId();
+//		int S2 = EIList[1].GetSrcNId();
+//		int F2 = EIList[1].GetDstNId();
+		if (S1 == D) { // skip this destination
+			return false;
+		}
+
+		Path sp;
+		double len = getSP(S1, D, sp);
+		if (len >= INF) {
+			return false;
+		}
+
+		vector<Link> failed_links;
+		PRINTF("links ");
+		for (int i = 0; i < EIList.size(); ++i) {
+			failed_links.push_back(Link(EIList[i]));
+			PRINTF("(%d, %d), ", failed_links[i].tail, failed_links[i].head);
+		}
+		PRINTF("D=%d\n", D);
+
+		PRINTF("first shortest path SP(%d,%d).weight=%f: ", S1, D, len);
+		print_path(sp);
+		if (sp[1] != F1) {
+			PRINTF("SP not using the links\n");
+			return false;
+		}
+
+		vector<double> weights(EIList.size());
+
+		for (int i = 0; i < EIList.size(); ++i) {
+			weights[i] = edgeWeight(EIList[i].GetId());
+//			PRINTF("disable link (%d,%d)\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId());
+			setEdgeWeight(EIList[i].GetId(), INF); // disable the link=
+		}
+
+		len = getSP(S1, D, sp); // shortest path without both links => post convergence path
+
+		for (int i = 0; i < EIList.size(); ++i) {
+			setEdgeWeight(EIList[i].GetId(), weights[i]); // enable the link
+//			PRINTF("enable link (%d,%d), w=%f\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId(),
+//					edgeWeight(EIList[i].GetId()));
+		}
+
+		PRINTF("second shortest path weight=%f: ", len);
+		print_path(sp);
+		if (len >= INF) {
+			PRINTF("no backup path\n");
+			return false;
+		}
+		int PSpace_sup = S1, QSpace_inf = D;
+		for (int i = 0; i < sp.size() && inPSpace(sp[i], failed_links);
+				++i) {
+			PRINTF("%d in PSpace\n", sp[i]);
+			PSpace_sup = i;
+		}
+		for (int i = sp.size() - 1;
+				i >= PSpace_sup && inQSpace(sp[i], failed_links, D);
+				--i) { // search backward for the infimum of QSpace, stop when it touches the PSpace
+			PRINTF("%d in QSpace\n", sp[i]);
+			QSpace_inf = i;
+		}
+
+		MyNode p = sp[PSpace_sup], q = sp[QSpace_inf];
+		PRINTF("p=%d q=%d\n", p, q);
+
+		// connect p to q with segments
+		for (int x = QSpace_inf - 1; x >= PSpace_sup; --x) {
+			if (!inQSpace(sp[x], failed_links,
+					stack.back().first)) {
+				stack.push_back(Segment(sp[x], sp[x + 1]));
+				stack.push_back(Segment(sp[x], sp[x]));
+			}
+		}
+		if (QSpace_inf == PSpace_sup) {
+			stack.push_back(Segment(p, p));
+		}
+
+		PRINTF("validating stack for (%d,%d), D=%d\n", S1, F1, D);
+		Assert(stack.size() > 1);
+		for (int i = stack.size() - 1; i > -1; --i) {
+			Segment seg = stack[i];
+			PRINTF("checking segment (%d,%d)\n", seg.first, seg.second);
+			if (seg.first != seg.second) {
 				Assert(
-						QSpace_inf == PSpace_sup + 1
-								|| PSpace_sup == QSpace_inf);
+						seg.first == S1
+								|| seg.first == stack[i + 1].second);
+			}
+		}
 
-				// deduce the necessary segments by comparing p and q
-				SegmentStack stack = { Segment(D, D), Segment(q, q) };
-				if (QSpace_inf > PSpace_sup) { // also push a "tunnel link" and p
-					stack.push_back(
-							Segment(sp[PSpace_sup], sp[PSpace_sup + 1]));
-				}
-				stack.push_back(Segment(p, p));
-
-//				PRINTF("validating stack for (%d,%d), D=%d\n", S, F, D);
-//				for (int i = stack.size() - 1; i > -1; --i) {
-//					Segment seg = stack[i];
-//					PRINTF("checking segment (%d,%d)\n", seg.first, seg.second);
-//					if (seg.first != seg.second) {
-//						Assert(
-//								seg.first == S
-//										|| seg.first == stack[i + 1].second);
-//					}
-//				}
-
-				table[dest][EI.GetId()] = stack;
-				PRINTF("stack size=%d\n", stack.size());
-				Assert(Link(S, F).inPath(SP(sp[PSpace_sup + 1], q)) == false); // requires a rigorous proof
-			} // next link
-		} // next destination
+		return true;
 	}
 
-	pair<int, int> eval_double_failure(Dest_Link_Table& table) {
+	void compute_SR_table() {
+		for (TNEANet::TEdgeI EI = G->BegEI(); EI < G->EndEI(); EI++) {
+
+		} // next link
+	}
+
+	// helper
+	void forEachLinkonBP(const TNEANet::TEdgeI EI,
+			MyNode D,
+			function<void(EdgeI&, const int)> fn) {
+
+		// segment stack for single-link failure
+		SegmentStack stack = table2D[D][EI.GetId()];
+		bool possible = compute_SegmentStack( { EI },
+				stack, D);
+		if (!possible) { // graph disconnected
+			return;
+		}
+
+		int S = EI.GetSrcNId();
+		int F = EI.GetDstNId();
+		Link L1 = Link(EI);
+		Path bp;
+		vector<int> destMap;
+		PRINTF(">>>> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
+		double len = backup_path(L1, stack, bp, destMap);
+		print_path(bp);
+		Assert(L1.inPath(bp) == false);
+
+		// all second failures on the first backup path
+		for (int i = 1; i < bp.size(); ++i) {
+			EdgeI EI2 = G->GetEI(bp[i - 1], bp[i]);
+			fn(EI2, destMap[i - 1]); // the link on BP and its (possibly intermediate) destination
+		}
+	}
+
+	pair<int, int> eval_double_failure() {
 		int fail = 0, success = 0;
 		for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
 			int D = NI.GetId();
-			for (TNEANet::TEdgeI EI1 = G->BegEI(); EI1 < G->EndEI(); EI1++) {
-				int S = EI1.GetSrcNId();
-				int F = EI1.GetDstNId();
-				Link L1 = Link(S, F, G);
-				Path bp1;
-				vector<int> destinationMap1;
-				PRINTF("L1=(%d,%d), D=%d: ", S, F, D);
-				double len = backup_path(L1, D, table, bp1, destinationMap1);
-				print_path(bp1);
-				Assert(L1.inPath(bp1) == false);
+
+			for (TNEANet::TEdgeI EI1 = G->BegEI(); EI1 < G->EndEI();
+					EI1++) {
+				Link L1 = Link(EI1);
+				double len = 0;
 				// all second failures on the first backup path
-				for (int i = 1; i < bp1.size(); ++i) {
-					Link L2 = Link(bp1[i - 1], bp1[i], G);
-					Path bp2;
-					vector<int> destinationMap2;
-					PRINTF("L2=(%d,%d), D=%d: ", L2.tail, L2.head,
-							destinationMap1[S]);
-					len += backup_path(L2, destinationMap1[S], table, bp2,
-							destinationMap2); // case1: keep the current stack
-					//len += backup_path( e2, D, table, bp); // case2: flush the stack down to D
-					print_path(bp2);
-					if (L1.inPath(bp2)) {
-						++fail;
-						PRINTF("++fail=%d\n", fail);
-					} else {
-						++success;
-						PRINTF("++success=%d\n", success);
-					}
-				}
+				forEachLinkonBP(EI1, D,
+						[&](EdgeI& EI2, const int D1) {
+							Link L2=Link(EI2);
+							PRINTF(">> L2=(%d,%d), D=%d: ", L2.tail, L2.head,D1);
+
+							// segment stack for double-link failure
+							//SegmentStack stack=table2D[D1][L2.id];	// case1: keep the current stack
+						SegmentStack stack=table2D[D][L2.id];// case2: flush the stack down to D
+
+						if( compute_SegmentStack( {/*EI1,*/EI2}, stack, D1)==false) {
+							return;
+						}
+						Path bp2;
+						vector<int> destinationMap2;
+						len += backup_path(L2, stack, bp2,
+								destinationMap2); // case1: keep the current stack
+						print_path(bp2);
+						if (L1.inPath(bp2)) {
+							++fail;
+							PRINTF("++fail=%d\n", fail);
+						} else {
+							++success;
+							PRINTF("++success=%d\n", success);
+						}
+					});
 			}
 		}
 		return pair<int, int>(fail, success);
