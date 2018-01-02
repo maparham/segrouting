@@ -161,13 +161,14 @@ class TILFA {
 		SegmentStack stack = table[D][L.id];
 		while (!stack.empty()) {
 			Segment seg = stack.back();
-			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
+//			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
 			stack.pop_back();
 			if (seg.first == seg.second) { // an intermediate destination (repair node)
 				int S_ = bp.back();
 				Path sp;
 				bpLen += getSP(S_, seg.second, sp);
 				bp.insert(bp.end(), sp.begin() + 1, sp.end()); // append the rest of the shortest path
+//				PRINTF("destinationMap %d to %d =%d\n",destinationMap.size()-1,bp.size() - 1,seg.second);
 				destinationMap.resize(bp.size() - 1, seg.second); // set destination for all the SP out_links
 
 			} else { // a tunnel link
@@ -178,7 +179,8 @@ class TILFA {
 				bpLen += edgeWeight(seg.first, seg.second);
 			}
 		}
-		return bpLen;
+		//Assert(bp.size() != 1);
+		return bp.size() != 1 ? bpLen : INF;
 	}
 
 public:
@@ -315,15 +317,15 @@ public:
 					Path bp2;
 					vector<int> destinationMap2;
 					PRINTF("L2=(%d,%d), D=%d: ", L2.tail, L2.head,
-							destinationMap1[S]);
-					len += backup_path(L2, destinationMap1[S], table, bp2,
+							destinationMap1[i - 1]);
+					len += backup_path(L2, destinationMap1[i - 1], table, bp2,
 							destinationMap2); // case1: keep the current stack
 					//len += backup_path( e2, D, table, bp); // case2: flush the stack down to D
 					print_path(bp2);
 					if (L1.inPath(bp2)) {
 						++fail;
 						PRINTF("++fail=%d\n", fail);
-					} else {
+					} else if(bp2.size()>1){
 						++success;
 						PRINTF("++success=%d\n", success);
 					}
