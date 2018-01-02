@@ -2,7 +2,6 @@
 #include <signal.h>
 #include <iostream>
 #include <fstream>
-#include <algorithm>    // std::reverse
 #include <vector>
 #include <map>
 #include <time.h>
@@ -63,9 +62,9 @@ int main() {
 
 		tilfa.compute_SR_table();
 
-		pair<int, int> res = tilfa.eval_double_failure();
-		PRINTF("fail=%d, success=%d, ratio=%f\n", res.first, res.second,
-				(double) res.first / (res.first + res.second));
+		Result res = tilfa.eval_double_failure();
+		PRINTF("fail=%d, success=%d, ratio=%f; maxSS=%d\n", res.fail, res.success,
+				(double) res.fail / (res.fail + res.success), res.maxStackSize);
 
 	}
 

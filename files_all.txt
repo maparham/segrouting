@@ -1,7 +1,7 @@
-/Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3257/weights.intra
-/Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3257/latencies.intra
 /Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3967/weights.intra
 /Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3967/latencies.intra
+/Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3257/weights.intra
+/Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/3257/latencies.intra
 /Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/1755/weights.intra
 /Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/1755/latencies.intra
 /Users/mahmoud/eclipse-workspace/segment_routing/rocketfuel/weights-dist/1221/weights.intra
