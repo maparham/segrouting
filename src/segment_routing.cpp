@@ -5,11 +5,12 @@
 #include <vector>
 #include <map>
 #include <time.h>
+
+#define doubleTILFA
+#define FLUSH_STACK
 #include <TILFA.hpp>
-#include <Klaus.hpp>
 
 #define __DEBUG__ 1
-
 #include <utils.h>
 
 using namespace std;
@@ -21,25 +22,32 @@ using namespace TSnap;
 int main() {
 	init();
 	clock_t begin = clock();
-
+#ifdef doubleTILFA
+	printf("double-fail TILFA\n");
+#else
+	printf("single-fail TILFA\n");
+#endif
+#ifdef FLUSH_STACK
+	printf("with flush\n");
+#else
+	printf("no flush\n");
+#endif
 //	G= TSnap::GenRndGnm<MyGraph>(10,20);
 
 	std::ifstream filelist("files.txt");
 	string path;
-	TILFA tilfa;
 	while (filelist >> path) {
 		if (path[0] == '#') {
 			continue;
 		}
 		printf("\nLoading %s\n", path.c_str());
+		TILFA tilfa;
 		tilfa.load_graph(path);
 		tilfa.printInfo();
 
 		Reporter reporter(path);
 
 		//tilfa.drawGraph(path);
-
-		tilfa.compute_SR_table();
 
 		Result res = tilfa.eval_double_failure(reporter);
 

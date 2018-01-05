@@ -34,11 +34,7 @@ typedef const TNEANet::TEdgeI EdgeI;
 
 typedef pair<int, int> Segment;
 typedef vector<Segment> SegmentStack;
-typedef map<int, SegmentStack> SSMap; // key is EId
-typedef map<int, SSMap> Dest_Link_Table_2D; // key is destination id
-// table for double links
-typedef map<int, SSMap> SSMap_2D; // key is (Eid1,EId2)
-typedef map<int, SSMap_2D> Dest_Link_Table_3D; // key is destination id
+typedef map<string, SegmentStack> Dest_Link_Table;
 
 struct MyStr: string {
 	const string s1;
@@ -84,8 +80,7 @@ struct Link {
 class TILFA {
 protected:
 	MyGraph G;
-	Dest_Link_Table_2D table2D;
-	Dest_Link_Table_3D table3D;
+	Dest_Link_Table table;
 	TIntStrH NodeLabelH;
 
 	double edgeWeight(const int u, const int v) {
@@ -181,12 +176,12 @@ protected:
 		return p;
 	}
 
-	double backup_path(const Link& L, const SegmentStack& stack, Path& bp,
+	double backup_path(const EdgeI& L, const SegmentStack& stack, Path& bp,
 			vector<int>& destinationMap) {
 		// invariant: destination map always covers bp before its last node
 		SegmentStack stack_cpy = stack;
-		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.tail, L.head, stack.size());
-		bp.push_back(L.tail);	// the first SP node
+		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.GetSrcNId(), L.GetDstNId(), stack.size());
+		bp.push_back(L.GetSrcNId());	// the first SP node
 		double bpLen = 0;
 		while (!stack_cpy.empty()) {
 			Segment seg = stack_cpy.back();
@@ -258,18 +253,19 @@ public:
 
 	// computes the segment stack w.r.t D and the first link in the given list
 	// knowing the other links in the list fail as well
-	bool compute_SegmentStack(vector<TNEANet::TEdgeI> EIList,
+	bool compute_SegmentStack(vector<EdgeI> EIList, EdgeI& current,
 			SegmentStack& stack, const int D) {
 
-		int S1 = EIList[0].GetSrcNId();
-		int F1 = EIList[0].GetDstNId();
+		Assert(stack.size() == 0);
+		int S1 = current.GetSrcNId();
+		int F1 = current.GetDstNId();
 		if (S1 == D) { // skip this destination
 			return false;
 		}
 
 		vector<double> weights(EIList.size());
 		double len;
-		PRINTF("compute_SegmentStack: ");
+		PRINTF("compute_SegmentStack wrt (%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(), D);
 
 		vector<Link> failed_links;
 		for (int i = 0; i < EIList.size(); ++i) {
@@ -345,7 +341,7 @@ public:
 		Assert(stack.size() > 0);
 		Assert(p == S1 || stack.size() > 1);
 
-		PRINTF("validating stack for (%d,%d), D=%d\n", S1, F1, D);
+		PRINTF("validating stack of size %d for (%d,%d), D=%d\n", stack.size(), S1, F1, D);
 		Assert(stack.size() > 1 || stack[0].first == S1 && stack[0].second == D);
 		for (int i = stack.size() - 1; i > -1; --i) {
 			Segment seg = stack[i];
@@ -360,13 +356,56 @@ public:
 		return true;
 	}
 
-	void compute_SR_table() {
-		for (TNEANet::TEdgeI EI = G->BegEI(); EI < G->EndEI(); EI++) {
-
-		} // next link
+	string genKey(const vector<EdgeI>& links, const int& dest) {
+		stringstream jId;
+		jId << dest << '_';
+		for (int i = links.size() - 1; i > -1; --i) {
+			jId << links[i].GetId() << "_";
+		}
+		return jId.str();
 	}
 
-	// helper; returns number of stack items
+	// compute or retrieve stack w.r.t. given known failure
+	const SegmentStack& getSegmentStack(const vector<EdgeI>& links, EdgeI& current, const int& dest) {
+		PRINTF("getSegmentStack wrt (%d,%d),(%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(),
+				(links.size() > 1) ? links[1].GetSrcNId() : -1, (links.size() > 1) ? links[1].GetDstNId() : -1, dest);
+
+		// TODO if already computed then just return it
+		SegmentStack* stack;
+		Assert(links[0].GetId() == current.GetId());
+
+		// segment stack for single-link failure
+		stack = &table[genKey(links, dest)];
+
+		if (stack->size() > 0) {
+			PRINTF("already computed, stack->size()=%d\n", stack->size());
+			return *stack;
+		}
+
+		bool possible = compute_SegmentStack(links, current, *stack, dest);
+		if (!possible) {
+			PRINTF("not possible!\n");
+			Assert(stack->size() == 0);
+		}
+		return *stack;
+	}
+
+	// must be called when the current link is on the BP of the other failed link
+	// traces a possible loop starting at the "current" link, w.r.t dest
+	bool isLoop(const vector<EdgeI>& knownFails, const vector<EdgeI>& allFails, EdgeI& current, int dest) {
+
+#ifdef FLUSH_STACK
+		return true;
+#endif
+
+		SegmentStack stack = getSegmentStack(knownFails, current, dest);
+
+		Path bp;
+		vector<int> destinationMap;
+		double len = backup_path(current, stack, bp, destinationMap);
+	}
+
+// helper; returns number of stack items
 	int forEachLinkonBP(const TNEANet::TEdgeI EI,
 			MyNode D,
 			function<void(EdgeI&, const int)> fn) {
@@ -389,18 +428,16 @@ public:
 			return INF;
 		}
 
-		// segment stack for single-link failure
-		SegmentStack stack = table2D[D][EI.GetId()];
-		bool possible = compute_SegmentStack( { EI },
-				stack, D);
-		if (!possible) { // graph disconnected
+		SegmentStack stack = getSegmentStack( { EI }, EI, D);
+		if (stack.size() == 0) { // no backup path
+			PRINTF("empty stack returned\n");
 			return INF;
 		}
 
 		Path bp;
 		vector<int> destMap;
 		PRINTF(">> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
-		len = backup_path(L1, stack, bp, destMap);
+		len = backup_path(EI, stack, bp, destMap);
 		print_path(bp);
 		Assert(L1.inPath(bp) == false);
 
@@ -433,27 +470,36 @@ public:
 							Link L2=Link(EI2);
 							PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", L2.tail, L2.head,D,D1);
 
-							const int dest = D;	// case2: flush the stack down to D (means possibly more rout options)
-//						const int dest = D1;// case1: keep the current stack
+#ifdef FLUSH_STACK
+						const int dest = D;	// case1: flush the stack down to D (means possibly more rout options)
+#else
+						const int dest = D1;	// case2: keep the current stack
+#endif
 
-						//Assert(SP(D,D1).size()>0);
+						vector<EdgeI> fails= {EI2, EI1}; // in reverse order of failure time
 
-						// segment stack for double-link failure
-						SegmentStack stack=table2D[dest][L2.id];
+						// failures known at this point
+#ifdef doubleTILFA
+						vector<EdgeI> knownFails= fails;	// current and previous fail
+#else
+						vector<EdgeI> knownFails = {fails[0]}; // only the current fail
+#endif
 
-						if( compute_SegmentStack( {EI2/*, EI1*/}, stack, dest)==false) { // graph disconnected or D=S
+						SegmentStack stack = getSegmentStack(knownFails,fails[0],dest);
+
+						if(stack.size()==0) { // graph disconnected or D=S
 							return;
 						}
 						Path bp2;
 						vector<int> destinationMap2;
-						len += backup_path(L2, stack, bp2,
+						len += backup_path(EI2, stack, bp2,
 								destinationMap2); // case1: keep the current stack
 						Assert(len<INF );
 
 						print_path(bp2);
 						PRINTF("weight=%f, INF=%d \n",len, INF);
 
-						if (L1.inPath(bp2)) {
+						if (L1.inPath(bp2) /* && isLoop( knownFails,fails,fails[1],dest )*/) {
 							++fail;
 							PRINTF("++fail=%d\n", fail);
 						} else {
