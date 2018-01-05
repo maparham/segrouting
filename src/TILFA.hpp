@@ -35,6 +35,7 @@ typedef const TNEANet::TEdgeI EdgeI;
 typedef pair<int, int> Segment;
 typedef vector<Segment> SegmentStack;
 typedef map<string, SegmentStack> Dest_Link_Table;
+typedef map<string, bool> TraceMap;
 
 struct MyStr: string {
 	const string s1;
@@ -67,13 +68,13 @@ struct Link {
 	Link(int tail, int head, const MyGraph G) :
 			tail(tail), head(head), id(G->GetEId(tail, head)) {
 	}
-	bool inPath(const Path& p) {
+	int inPath(const Path& p) {
 		for (int i = 1; i < p.size(); ++i) {
 			if (p[i - 1] == tail && p[i] == head) {
-				return true;
+				return i - 1;
 			}
 		}
-		return false;
+		return -1;
 	}
 };
 
@@ -370,10 +371,12 @@ public:
 		PRINTF("getSegmentStack wrt (%d,%d),(%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(),
 				(links.size() > 1) ? links[1].GetSrcNId() : -1, (links.size() > 1) ? links[1].GetDstNId() : -1, dest);
 
-		// TODO if already computed then just return it
-		SegmentStack* stack;
+#ifndef doubleTILFA
+		Assert(links.size() == 1);
+#endif
 		Assert(links[0].GetId() == current.GetId());
 
+		SegmentStack* stack;
 		// segment stack for single-link failure
 		stack = &table[genKey(links, dest)];
 
@@ -390,19 +393,52 @@ public:
 		return *stack;
 	}
 
-	// must be called when the current link is on the BP of the other failed link
-	// traces a possible loop starting at the "current" link, w.r.t dest
-	bool isLoop(const vector<EdgeI>& knownFails, const vector<EdgeI>& allFails, EdgeI& current, int dest) {
+	// must be called when the current link is on the BP of the other failed link.
+	// traces a possible loop starting at the "current" link, w.r.t dest.
+	// this check matter only when the knowledge of other failures is not available.
+	//
+	bool isFail(const vector<EdgeI>& fails, EdgeI& current, int dest, int depth = 0, TraceMap& trace =
+			*(new TraceMap())) {
+
+		PRINTF("isFail? current=(%d,%d),dest=%d\n", current.GetSrcNId(), current.GetDstNId(), dest);
+		bool& seen = trace[genKey( { current }, dest)];
+		if (seen) {
+			PRINTF("packet already has seen the link and the destination => is loop\n");
+			return true;
+		}
+		seen = true;
 
 #ifdef FLUSH_STACK
 		return true;
 #endif
+#ifdef doubleTILFA
+		exit(0); // should never happen
+#endif
 
-		SegmentStack stack = getSegmentStack(knownFails, current, dest);
-
+		SegmentStack stack = getSegmentStack( { current }, current, dest);
+		if (stack.size() == 0) { // no backup rout => drop packet
+			return true;
+		}
+		if (depth > 10) {
+			PRINTF("recursion too deep: %d\n => fail", depth);
+			exit(11);
+			return true;
+		}
 		Path bp;
 		vector<int> destinationMap;
 		double len = backup_path(current, stack, bp, destinationMap);
+		Assert(len <INF && bp.size()>1);
+
+		bool isLoop = false;
+		int pos;
+		for (EdgeI L : fails) {
+			pos = Link(L).inPath(bp);
+			if (pos >= 0) {
+				isLoop = isLoop || isFail(fails, L, destinationMap[pos], ++depth, trace);
+			}
+		}
+		//if(!isLoop) exit(0);
+		return isLoop;
 	}
 
 // helper; returns number of stack items
@@ -439,7 +475,7 @@ public:
 		PRINTF(">> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
 		len = backup_path(EI, stack, bp, destMap);
 		print_path(bp);
-		Assert(L1.inPath(bp) == false);
+		Assert(L1.inPath(bp) < 0);
 
 		// all second failures on the first backup path
 		for (int i = 1; i < bp.size(); ++i) {
@@ -499,7 +535,7 @@ public:
 						print_path(bp2);
 						PRINTF("weight=%f, INF=%d \n",len, INF);
 
-						if (L1.inPath(bp2) /* && isLoop( knownFails,fails,fails[1],dest )*/) {
+						if (L1.inPath(bp2)>=0 && isFail(fails,EI1,dest )) { // never true for double-link TILFA
 							++fail;
 							PRINTF("++fail=%d\n", fail);
 						} else {

@@ -6,8 +6,8 @@
 #include <map>
 #include <time.h>
 
-#define doubleTILFA
-#define FLUSH_STACK
+//#define doubleTILFA
+//#define FLUSH_STACK
 #include <TILFA.hpp>
 
 #define __DEBUG__ 1
