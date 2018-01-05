@@ -8,43 +8,19 @@
 #include <TILFA.hpp>
 #include <Klaus.hpp>
 
+#define __DEBUG__ 1
+
+#include <utils.h>
+
 using namespace std;
 using namespace TSnap;
 
 #define INF numeric_limits<int>::max()/3
 #define WEIGHTATTR "weight"
 
-#define __DEBUG__ 1
-#ifdef __DEBUG__
-#define PRINTF printf
-#else
-#define PRINTF(format, args...) ((void)0)
-#endif
-
-void handler(int sig) {
-	void* array[10];
-	size_t size;
-
-	// get void*'s for all entries on the stack
-	size = backtrace(array, 10);
-
-	// print out all the frames to stderr
-	fprintf(stderr, "Error: signal %d:\n", sig);
-	backtrace_symbols_fd(array, size, STDERR_FILENO);
-	exit(1);
-}
-
 int main() {
-	signal(SIGSEGV, handler); // install our handler
-	/* initialize random seed: */
-	srand(time(NULL));
-//	ifstream topgen;
-//	topgen.open("/Users/mahmoud/Downloads/weights-dist/1221/latencies.intra");
-
-//	if (!topgen.is_open()) {
-//		mylog("file not opened.");
-//		return nodes;
-//	}
+	init();
+	clock_t begin = clock();
 
 //	G= TSnap::GenRndGnm<MyGraph>(10,20);
 
@@ -55,26 +31,32 @@ int main() {
 		if (path[0] == '#') {
 			continue;
 		}
-		PRINTF(" Loading %s\n", path.c_str());
+		printf("\nLoading %s\n", path.c_str());
 		tilfa.load_graph(path);
-		//tilfa.drawGraph(path);
 		tilfa.printInfo();
+
+		Reporter reporter(path);
+
+		//tilfa.drawGraph(path);
 
 		tilfa.compute_SR_table();
 
-		Result res = tilfa.eval_double_failure();
+		Result res = tilfa.eval_double_failure(reporter);
+
 		PRINTF("fail=%d, success=%d, ratio=%f; maxSS=%d\n", res.fail, res.success,
 				(double) res.fail / (res.fail + res.success), res.maxStackSize);
 
+		clock_t now = clock();
+		clock_t elapsed_secs = double(now - begin) / CLOCKS_PER_SEC;
+		if (elapsed_secs < 60) {
+			PRINTF("elapsed time=%d sec\n", elapsed_secs);
+		} else {
+			PRINTF("elapsed time=%d min\n", elapsed_secs / 60);
+		}
 	}
 
-//	int randNode = sp[rand() % (sp.size() - 1)];
-//	PRINTF("randNode=%d", randNode);
-//	int failedLink = G->GetEI(sp[randNode], sp[randNode + 1]).GetId();
-//	PRINTF("failedLink=%d\n", failedLink);
-//	G->AddIntAttrDatE(failedLink, INF,WEIGHTATTR);
-//	getSP(G, src, dest, sp);
-//	printsp(sp);
-
+	clock_t end = clock();
+	clock_t elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
+	PRINTF("total time=%d min\n", elapsed_secs / 60);
 	return 0;
 }

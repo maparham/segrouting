@@ -1,20 +1,17 @@
 #ifndef GUROBI_FLOWUPDATE_CPP_
 #define GUROBI_FLOWUPDATE_CPP_
 
+//#define __DEBUG__ 1
+
 #include <algorithm>    // std::reverse
 #include <vector>
 #include <map>
 #include "Snap.h"
+#include <utils.h>
+#include <ctime>
 
 using namespace std;
 using namespace TSnap;
-
-//#define __DEBUG__ 1
-#ifdef __DEBUG__
-#define PRINTF printf
-#else
-#define PRINTF(format, args...) ((void)0)
-#endif
 
 #define ANSI_COLOR_RESET "\033[0m"
 #define RED(TXT)     MyStr("\033[1;31m" TXT ANSI_COLOR_RESET)
@@ -179,7 +176,8 @@ protected:
 
 	Path SP(MyNode src, MyNode dest) {
 		Path p;
-		PRINTF("getSP=%f\n", getSP(src, dest, p));
+		int w = getSP(src, dest, p);
+		PRINTF("getSP=%f\n", w);
 		return p;
 	}
 
@@ -255,7 +253,7 @@ public:
 	}
 
 	void printInfo() {
-		PRINTF("%d nodes, %d links\n", nofNodes, nofLinks);
+		printf("%d nodes, %d links\n", nofNodes, nofLinks);
 	}
 
 	// computes the segment stack w.r.t D and the first link in the given list
@@ -265,47 +263,34 @@ public:
 
 		int S1 = EIList[0].GetSrcNId();
 		int F1 = EIList[0].GetDstNId();
-//		int S2 = EIList[1].GetSrcNId();
-//		int F2 = EIList[1].GetDstNId();
 		if (S1 == D) { // skip this destination
 			return false;
 		}
 
-		Path sp;
-		double len = getSP(S1, D, sp);
-		if (len >= INF) {
-			return false;
-		}
+		vector<double> weights(EIList.size());
+		double len;
+		PRINTF("compute_SegmentStack: ");
 
 		vector<Link> failed_links;
-		PRINTF("compute_SegmentStack: ");
 		for (int i = 0; i < EIList.size(); ++i) {
 			failed_links.push_back(Link(EIList[i]));
 			PRINTF("(%d, %d), ", failed_links[i].tail, failed_links[i].head);
 		}
 		PRINTF("D=%d\n", D);
 
-		PRINTF("first shortest path SP(%d,%d).weight=%f: ", S1, D, len);
-		print_path(sp);
-		if (sp[1] != F1) {
-			PRINTF("SP not using the links\n");
-			return false;
-		}
-
-		vector<double> weights(EIList.size());
-
 		for (int i = 0; i < EIList.size(); ++i) {
 			weights[i] = edgeWeight(EIList[i].GetId());
-//			PRINTF("disable link (%d,%d)\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId());
-			setEdgeWeight(EIList[i].GetId(), INF); // disable the link=
+			PRINTF("disable link (%d,%d)\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId());
+			setEdgeWeight(EIList[i].GetId(), INF); // disable the link
 		}
 
-		len = getSP(S1, D, sp); // shortest path without failed links,i.e., post convergence path
+		Path sp;
+		len = getSP(S1, D, sp); // shortest path without all failed links,i.e., post convergence path
 
 		for (int i = 0; i < EIList.size(); ++i) {
 			setEdgeWeight(EIList[i].GetId(), weights[i]); // enable the link
-//			PRINTF("enable link (%d,%d), w=%f\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId(),
-//					edgeWeight(EIList[i].GetId()));
+			PRINTF("enable link (%d,%d), w=%f\n", EIList[i].GetSrcNId(), EIList[i].GetDstNId(),
+					edgeWeight(EIList[i].GetId()));
 		}
 
 		PRINTF("second shortest path weight=%f: ", len);
@@ -315,6 +300,7 @@ public:
 			return false;
 		}
 		Assert(sp.size() > 1);
+
 		int PSpace_sup = S1, QSpace_inf = D;
 		for (int i = 0; i < sp.size() && inPSpace(sp[i], failed_links);
 				++i) {
@@ -332,21 +318,32 @@ public:
 		if (q != D) {
 			stack.push_back(Segment(D, D));
 		}
+
 		int segDest = D;
-		// connect p to q with segments
+		// decide segments from q to p, p < q
 		for (int x = QSpace_inf - 1;
 				x >= PSpace_sup; --x) {
 			if (!inQSpace(sp[x], failed_links, segDest)) {
 				stack.push_back(Segment(sp[x], sp[x + 1]));
-				if (x > 0) { // don't push S1
+				if (x > 0) { // don'4 push S1
 					stack.push_back(Segment(sp[x], sp[x]));
 				}
 				segDest = stack.back().first;	// destination for the next segment
 			}
 		}
-		if (p != S1 && stack.back().first != p) {	// p must be the top of stack unless...
+
+		if (p == q && p == D) {	// in case of an inconsistent shortest path algorithm, ie, sp is a first shortest path
+			Assert(stack.size() == 0);
+			stack.push_back(Segment(D, D));
+			stack.push_back(Segment(sp[0]/*S1*/, sp[1]));	// force the packet at S1 take this alternative SP
+			PRINTF("inconsistent SP=> pushing D=%d and first link\n", D);
+
+		} else if (p != S1 && stack.back().first != p) {	// p must be the top of stack unless...
 			stack.push_back(Segment(p, p));
 		}
+
+		Assert(stack.size() > 0);
+		Assert(p == S1 || stack.size() > 1);
 
 		PRINTF("validating stack for (%d,%d), D=%d\n", S1, F1, D);
 		Assert(stack.size() > 1 || stack[0].first == S1 && stack[0].second == D);
@@ -369,10 +366,28 @@ public:
 		} // next link
 	}
 
-	// helper
+	// helper; returns number of stack items
 	int forEachLinkonBP(const TNEANet::TEdgeI EI,
 			MyNode D,
 			function<void(EdgeI&, const int)> fn) {
+
+		int S = EI.GetSrcNId();
+		int F = EI.GetDstNId();
+		Link L1 = Link(EI);
+		Path sp;
+
+		double len = getSP(S, D, sp); // SP in the original graph
+
+		if (!(len < INF)) {
+			return INF;
+		}
+		PRINTF("first shortest path SP(%d,%d).weight=%f: ", S, D, len);
+		print_path(sp);
+		Assert(sp.size() > 1);
+		if (sp[1] != F) {	// the the link is irrelevant to D
+			PRINTF("first SP not using the link => irrelevant case\n");
+			return INF;
+		}
 
 		// segment stack for single-link failure
 		SegmentStack stack = table2D[D][EI.GetId()];
@@ -382,13 +397,10 @@ public:
 			return INF;
 		}
 
-		int S = EI.GetSrcNId();
-		int F = EI.GetDstNId();
-		Link L1 = Link(EI);
 		Path bp;
 		vector<int> destMap;
-		PRINTF(">>>> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
-		double len = backup_path(L1, stack, bp, destMap);
+		PRINTF(">> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
+		len = backup_path(L1, stack, bp, destMap);
 		print_path(bp);
 		Assert(L1.inPath(bp) == false);
 
@@ -400,35 +412,47 @@ public:
 		return stack.size();
 	}
 
-	Result eval_double_failure() {
+	Result eval_double_failure(Reporter& report) {
 		int fail = 0, success = 0, maxSS = 0;
 		for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
 			int D = NI.GetId();
 
 			for (TNEANet::TEdgeI EI1 = G->BegEI(); EI1 < G->EndEI();
 					EI1++) {
+
+				if (EI1.GetSrcNId() == D) {
+					continue;
+				}
+
 				Link L1 = Link(EI1);
 				double len = 0;
+
 				// all second failures on the first backup path
 				int SS = forEachLinkonBP(EI1, D,
 						[&](EdgeI& EI2, const int D1) {
 							Link L2=Link(EI2);
-							PRINTF(">> L2=(%d,%d), D=%d: ", L2.tail, L2.head,D1);
+							PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", L2.tail, L2.head,D,D1);
 
-							// segment stack for double-link failure
-							//SegmentStack stack=table2D[D1][L2.id];	// case1: keep the current stack
-						SegmentStack stack=table2D[D][L2.id];// case2: flush the stack down to D (means possibly more rout options)
+							const int dest = D;	// case2: flush the stack down to D (means possibly more rout options)
+//						const int dest = D1;// case1: keep the current stack
 
-						if( compute_SegmentStack( {EI2, EI1}, stack, D1)==false) {
-							return; // nonsense cases
+						//Assert(SP(D,D1).size()>0);
+
+						// segment stack for double-link failure
+						SegmentStack stack=table2D[dest][L2.id];
+
+						if( compute_SegmentStack( {EI2/*, EI1*/}, stack, dest)==false) { // graph disconnected or D=S
+							return;
 						}
 						Path bp2;
 						vector<int> destinationMap2;
 						len += backup_path(L2, stack, bp2,
 								destinationMap2); // case1: keep the current stack
+						Assert(len<INF );
+
 						print_path(bp2);
 						PRINTF("weight=%f, INF=%d \n",len, INF);
-						Assert(len<INF );
+
 						if (L1.inPath(bp2)) {
 							++fail;
 							PRINTF("++fail=%d\n", fail);
@@ -440,13 +464,17 @@ public:
 						if( maxSS < stack.size()) {
 							maxSS = stack.size();
 						}
+						report << stack.size()-1 << '\n';
 					});
-				if (SS < INF && SS > maxSS) {
-					maxSS = SS;
+				if (SS < INF) {
+					report << SS - 1 << '\n';
+					if (SS > maxSS) {
+						maxSS = SS;
+					}
 				}
 			}
 		}
-		return Result(fail, success, maxSS);
+		return Result(fail, success, maxSS - 1);
 	}
 };
 
