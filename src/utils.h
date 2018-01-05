@@ -19,7 +19,7 @@
 #ifndef UTILS_H_
 #define UTILS_H_
 
-#define RESULT_DIR string("results/")
+#define RESULT_DIR string("results")
 
 #include <string>
 #include <sstream>
@@ -85,7 +85,7 @@ struct Reporter {
 #ifdef doubleTILFA
 		dir+="doubleTILFA";
 #else
-		dir += "singleTILFA";
+		dir += "TILFA";
 #endif
 		dir += '/';
 		return dir;
@@ -96,7 +96,7 @@ struct Reporter {
 		// prepare result file
 		vector<string> tokens = split(path, '/');
 		reverse(tokens.begin(), tokens.end());
-		tokens[1] + '_' + tokens[0];
+		name = tokens[1] + '_' + tokens[0];
 		string dir = resultDir();
 		string resultPath = dir + name + ".txt";
 

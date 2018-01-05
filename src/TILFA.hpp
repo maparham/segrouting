@@ -55,7 +55,7 @@ struct Result {
 			fail(a1), success(a2), maxStackSize(a3) {
 	}
 	double failRatio() {
-		double ratio = (double) res.fail / (fail + success);
+		double ratio = (double) fail / (fail + success);
 		return ratio;
 	}
 };

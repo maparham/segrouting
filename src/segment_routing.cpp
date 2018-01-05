@@ -6,8 +6,8 @@
 #include <map>
 #include <time.h>
 
-#define doubleTILFA
-#define FLUSH_STACK
+//#define doubleTILFA
+//#define FLUSH_STACK
 #include <TILFA.hpp>
 
 #define __DEBUG__ 1
@@ -65,7 +65,7 @@ int main() {
 				<< '\t' << res.maxStackSize << '\n';
 
 		PRINTF("fail=%d, success=%d, ratio=%f; maxSS=%d\n", res.fail, res.success,
-				ratio, res.maxStackSize);
+				res.failRatio(), res.maxStackSize);
 
 		clock_t now = clock();
 		clock_t elapsed_secs = double(now - t) / CLOCKS_PER_SEC;
