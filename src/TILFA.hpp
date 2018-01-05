@@ -54,6 +54,10 @@ struct Result {
 	Result(int a1, int a2, int a3) :
 			fail(a1), success(a2), maxStackSize(a3) {
 	}
+	double failRatio() {
+		double ratio = (double) res.fail / (fail + success);
+		return ratio;
+	}
 };
 struct Link {
 	const int tail;
@@ -548,14 +552,15 @@ public:
 						}
 						report << stack.size()-1 << '\n';
 					});
+
 				if (SS < INF) {
 					report << SS - 1 << '\n';
 					if (SS > maxSS) {
 						maxSS = SS;
 					}
 				}
-			}
-		}
+			} // next E1
+		} //next dest
 		return Result(fail, success, maxSS - 1);
 	}
 };

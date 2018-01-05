@@ -6,7 +6,6 @@
  */
 
 //#define LOG2FILE 1
-
 #ifdef __DEBUG__
 #ifdef Log2File
 #define PRINTF(...) fprintf(f,__VA_ARGS__)
@@ -71,19 +70,40 @@ std::vector<std::string> split(const std::string &s, char delim) {
 }
 
 struct Reporter {
+	string name;
 	ofstream of;
 	ofstream all;
+	static string resultDir() {
+		string dir = RESULT_DIR + '/';
+
+#ifdef FLUSH_STACK
+		dir+="withflush_";
+#else
+		dir += "noflush_";
+#endif
+
+#ifdef doubleTILFA
+		dir+="doubleTILFA";
+#else
+		dir += "singleTILFA";
+#endif
+		dir += '/';
+		return dir;
+	}
+
 	// constructor
 	Reporter(const string& path) {
 		// prepare result file
 		vector<string> tokens = split(path, '/');
 		reverse(tokens.begin(), tokens.end());
-		string resultPath = RESULT_DIR + tokens[1] + '_' + tokens[0] + ".txt";
+		tokens[1] + '_' + tokens[0];
+		string dir = resultDir();
+		string resultPath = dir + name + ".txt";
 
 		printf("Result Path: %s\n", resultPath.c_str());
 
 		of.open(resultPath);
-		all.open(RESULT_DIR + "all.txt", std::ios_base::app);
+		all.open(dir + "all.txt", std::ios_base::app);
 		if (!of.is_open() || !all.is_open()) {
 			printf("file not opened: %s", resultPath.c_str());
 			exit(1);
