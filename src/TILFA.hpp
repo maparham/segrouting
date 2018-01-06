@@ -100,6 +100,18 @@ protected:
 		return G->AddFltAttrDatE(EId, val, WEIGHTATTR);
 	}
 
+	// path weight for sub-path p[a,b)
+	double pathWeight(const Path p, const int a = 0, int b = INF) {
+		if (b == INF) {
+			b = p.size();
+		}
+		double sum = 0;
+		for (int i = a + 1; i < b; ++i) {
+			sum += edgeWeight(p[i - 1], p[i]);
+		}
+		return sum;
+	}
+
 	char* nodeLabel(const int NId) {
 		return G->GetStrAttrDatN(NId, "label").CStr();
 	}
@@ -204,12 +216,12 @@ protected:
 				tosMap.resize(bp.size() - 1, stackPos); // set destination for all the SP out_links
 
 			} else { // a tunnel link
-				PRINTF("seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
+				PRINTF("tunnel: seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
 				Assert(seg.first == bp.back());	// the link's tail must be the last node already
 				bp.push_back(seg.second);	// the head node (q)
 				tosMap.push_back(stackPos);	// for the tail node (p)
 				bpLen += edgeWeight(seg.first, seg.second);
-				PRINTF("edgeWeight(%d,%d)=%f\n", seg.first, seg.second, edgeWeight(seg.first, seg.second));
+//				PRINTF("edgeWeight(%d,%d)=%f\n", seg.first, seg.second, edgeWeight(seg.first, seg.second));
 
 			}
 		}
@@ -386,7 +398,8 @@ public:
 	// compute or retrieve stack w.r.t. given known failure
 	const SegmentStack& getSegmentStack(const vector<EdgeI>& links, EdgeI& current, const int& dest) {
 		PRINTF("getSegmentStack wrt (%d,%d),(%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(),
-				(links.size() > 1) ? links[1].GetSrcNId() : -1, (links.size() > 1) ? links[1].GetDstNId() : -1, dest);
+				(links.size() > 1) ? links[1].GetSrcNId() : -1, (links.size() > 1) ? links[1].GetDstNId() : -1,
+				dest);
 
 #ifndef doubleTILFA
 		Assert(links.size() == 1);
@@ -464,7 +477,7 @@ public:
 // helper; returns number of stack items
 	int forEachLinkonBP(const TNEANet::TEdgeI EI,
 			MyNode D,
-			function<void(EdgeI&, SegmentStack&)> fn) {
+			function<void(EdgeI&, SegmentStack&, const double)> fn) {
 
 		int S = EI.GetSrcNId();
 		int F = EI.GetDstNId();
@@ -501,8 +514,8 @@ public:
 		for (int i = 1; i < bp.size(); ++i) {
 			EdgeI EI2 = G->GetEI(bp[i - 1], bp[i]);
 			SegmentStack currentStack(stack.begin(), stack.begin() + tos[i - 1] + 1); // stack content up to current node bp[i-1]
-			PRINTF("tos[i - 1]=%d, currentStack.size()=%d\n", tos[i - 1], currentStack.size());
-			fn(EI2, currentStack); // the link on BP and its (possibly intermediate) destination
+			double w = pathWeight(bp, 0, i);
+			fn(EI2, currentStack, w); // the link on BP and its (possibly intermediate) destination
 		}
 		return stack.size();
 	}
@@ -520,25 +533,25 @@ public:
 				}
 
 				Link L1 = Link(EI1);
-				double len = 0;
+				double w1 = 0;
 
 				// all second failures on the first backup path
 				forEachLinkonBP(EI1, D,
-						[&](EdgeI& EI2, SegmentStack stack0) {
+						[&](EdgeI& EI2, SegmentStack stack0,double w0) {
 
 							Assert(stack0.size()>0);
-							PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", EI2.GetSrcNId(), EI2.GetDstNId(), D, D1);
 
 #ifdef FLUSH_STACK
-						// case1: flush the stack down to D (means possibly more rout options)
+						// case1: flush the stack; final dest will be inserted again
 						Assert(stack0[0].second==D);
-						stack0.erase(stack0.begin() + 1, stack0.end());
+						stack0.clear();
 						const int dest = D;
 #else
 						// case2: keep the current stack1
 						const int dest=stack0.back().second;
-						stack0.pop_back();// will be back in the next stack
+						stack0.pop_back();// next destination will be push back again
 #endif
+						PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", EI2.GetSrcNId(), EI2.GetDstNId(), D, dest);
 
 						vector<EdgeI> fails= {EI2, EI1}; // in reverse order of failure time
 
@@ -549,17 +562,20 @@ public:
 						vector<EdgeI> knownFails = {fails[0]}; // only the current fail
 #endif
 
-						SegmentStack stack1 = getSegmentStack(knownFails,fails[0],dest);
+						SegmentStack stack1 = getSegmentStack(knownFails,fails[0], dest);
 
 						if(stack1.size()==0) { // graph disconnected or D=S
 							return;
 						}
+
+						stack0.insert(stack0.end(),stack1.begin(),stack1.end()); // the packet's new stack
+
 						Path bp2;
-						len += backup_path(EI2, stack1, bp2); // case1: keep the current stack1
-						Assert(len<INF );
+						w1 = backup_path(EI2, stack0, bp2);
+						Assert(w1<INF );
 
 						print_path(bp2);
-						PRINTF("weight=%f, INF=%d \n",len, INF);
+						PRINTF("weight=%f, INF=%d \n",w1, INF);
 
 						if (L1.inPath(bp2)>=0 && isFail(fails,EI1,dest )) { // never true for double-link TILFA
 							++fail;
@@ -570,11 +586,10 @@ public:
 							PRINTF("++success=%d\n", success);
 						}
 
-						stack0.insert(stack0.end(),stack1.begin(),stack1.end()); // the packet's new stack
 						if( maxSS < stack0.size()) {
 							maxSS = stack0.size();
 						}
-						report << stack0.size()-1 << '\n';
+						report << (w0 + w1) <<'\t'<<stack0.size()-1 << '\n';
 					});
 			} // next E1
 		} //next dest

@@ -6,7 +6,7 @@
 #include <map>
 #include <time.h>
 
-//#define doubleTILFA
+#define doubleTILFA
 //#define FLUSH_STACK
 #include <TILFA.hpp>
 
