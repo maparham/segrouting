@@ -36,6 +36,7 @@ typedef pair<int, int> Segment;
 typedef vector<Segment> SegmentStack;
 typedef map<string, SegmentStack> Dest_Link_Table;
 typedef map<string, bool> TraceMap;
+typedef vector<int> TopOfStack_Map;
 
 struct MyStr: string {
 	const string s1;
@@ -182,29 +183,31 @@ protected:
 	}
 
 	double backup_path(const EdgeI& L, const SegmentStack& stack, Path& bp,
-			vector<int>& destinationMap) {
+			TopOfStack_Map& tosMap) {
+
 		// invariant: destination map always covers bp before its last node
-		SegmentStack stack_cpy = stack;
 		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.GetSrcNId(), L.GetDstNId(), stack.size());
 		bp.push_back(L.GetSrcNId());	// the first SP node
 		double bpLen = 0;
-		while (!stack_cpy.empty()) {
-			Segment seg = stack_cpy.back();
+
+		for (auto itr = stack.end(); itr-- != stack.begin();) {
+			Segment seg = *itr;
+			int stackPos = itr - stack.begin();
 			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
-			stack_cpy.pop_back();
-			if (seg.first == seg.second) { // an intermediate destination (repair node)
+
+			if (seg.first == seg.second) { // an intermediate destination (i.e repair node)
 				int S_ = bp.back();
 				Path sp;
 				bpLen += getSP(S_, seg.first, sp);
 				PRINTF("getSP(%d, %d)=%f\n", S_, seg.first, bpLen);
 				bp.insert(bp.end(), sp.begin() + 1, sp.end()); // append the rest of the shortest path
-				destinationMap.resize(bp.size() - 1, seg.second); // set destination for all the SP out_links
+				tosMap.resize(bp.size() - 1, stackPos); // set destination for all the SP out_links
 
 			} else { // a tunnel link
 				PRINTF("seg.first=%d, bp.back()=%d\n", seg.first, bp.back());
 				Assert(seg.first == bp.back());	// the link's tail must be the last node already
 				bp.push_back(seg.second);	// the head node (q)
-				destinationMap.push_back(seg.second);	// for the tail node (p)
+				tosMap.push_back(stackPos);	// for the tail node (p)
 				bpLen += edgeWeight(seg.first, seg.second);
 				PRINTF("edgeWeight(%d,%d)=%f\n", seg.first, seg.second, edgeWeight(seg.first, seg.second));
 
@@ -214,6 +217,10 @@ protected:
 		return bpLen;
 	}
 
+	double backup_path(const EdgeI& L, const SegmentStack& stack, Path& bp) {
+		TopOfStack_Map tosMap;
+		return backup_path(L, stack, bp, tosMap);
+	}
 public:
 	int nofLinks;
 	int nofNodes;
@@ -362,8 +369,8 @@ public:
 								|| seg.first == stack[i + 1].second);
 			}
 		}
-		Assert(p == S1 || p == dest || stack.size() > 1);
 
+		Assert(p == dest || sp.size() == 2 || stack.size() > 1);	// validate final stack size
 		return true;
 	}
 
@@ -437,8 +444,8 @@ public:
 			return true;
 		}
 		Path bp;
-		vector<int> destinationMap;
-		double len = backup_path(current, stack, bp, destinationMap);
+		TopOfStack_Map tosMap;
+		double len = backup_path(current, stack, bp, tosMap);
 		Assert(len <INF && bp.size()>1);
 
 		bool isLoop = false;
@@ -446,7 +453,8 @@ public:
 		for (EdgeI L : fails) {
 			pos = Link(L).inPath(bp);
 			if (pos >= 0) {
-				isLoop = isLoop || isFail(fails, L, destinationMap[pos], ++depth, trace);
+				int dest1 = stack[tosMap[pos]].second;
+				isLoop = isLoop || isFail(fails, L, dest1, ++depth, trace);
 			}
 		}
 		//if(!isLoop) exit(0);
@@ -456,7 +464,7 @@ public:
 // helper; returns number of stack items
 	int forEachLinkonBP(const TNEANet::TEdgeI EI,
 			MyNode D,
-			function<void(EdgeI&, const int)> fn) {
+			function<void(EdgeI&, SegmentStack&)> fn) {
 
 		int S = EI.GetSrcNId();
 		int F = EI.GetDstNId();
@@ -483,16 +491,18 @@ public:
 		}
 
 		Path bp;
-		vector<int> destMap;
+		TopOfStack_Map tos;
 		PRINTF(">> L1=(%d,%d), D=%d: ", S, F, stack[0].first);
-		len = backup_path(EI, stack, bp, destMap);
+		len = backup_path(EI, stack, bp, tos);
 		print_path(bp);
 		Assert(L1.inPath(bp) < 0);
 
 		// all second failures on the first backup path
 		for (int i = 1; i < bp.size(); ++i) {
 			EdgeI EI2 = G->GetEI(bp[i - 1], bp[i]);
-			fn(EI2, destMap[i - 1]); // the link on BP and its (possibly intermediate) destination
+			SegmentStack currentStack(stack.begin(), stack.begin() + tos[i - 1] + 1); // stack content up to current node bp[i-1]
+			PRINTF("tos[i - 1]=%d, currentStack.size()=%d\n", tos[i - 1], currentStack.size());
+			fn(EI2, currentStack); // the link on BP and its (possibly intermediate) destination
 		}
 		return stack.size();
 	}
@@ -513,15 +523,21 @@ public:
 				double len = 0;
 
 				// all second failures on the first backup path
-				int SS = forEachLinkonBP(EI1, D,
-						[&](EdgeI& EI2, const int D1) {
-							Link L2=Link(EI2);
-							PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", L2.tail, L2.head,D,D1);
+				forEachLinkonBP(EI1, D,
+						[&](EdgeI& EI2, SegmentStack stack0) {
+
+							Assert(stack0.size()>0);
+							PRINTF(">> L2=(%d,%d), D=%d,D1=%d: ", EI2.GetSrcNId(), EI2.GetDstNId(), D, D1);
 
 #ifdef FLUSH_STACK
-						const int dest = D;	// case1: flush the stack down to D (means possibly more rout options)
+						// case1: flush the stack down to D (means possibly more rout options)
+						Assert(stack0[0].second==D);
+						stack0.erase(stack0.begin() + 1, stack0.end());
+						const int dest = D;
 #else
-						const int dest = D1;	// case2: keep the current stack
+						// case2: keep the current stack1
+						const int dest=stack0.back().second;
+						stack0.pop_back();// will be back in the next stack
 #endif
 
 						vector<EdgeI> fails= {EI2, EI1}; // in reverse order of failure time
@@ -533,15 +549,13 @@ public:
 						vector<EdgeI> knownFails = {fails[0]}; // only the current fail
 #endif
 
-						SegmentStack stack = getSegmentStack(knownFails,fails[0],dest);
+						SegmentStack stack1 = getSegmentStack(knownFails,fails[0],dest);
 
-						if(stack.size()==0) { // graph disconnected or D=S
+						if(stack1.size()==0) { // graph disconnected or D=S
 							return;
 						}
 						Path bp2;
-						vector<int> destinationMap2;
-						len += backup_path(EI2, stack, bp2,
-								destinationMap2); // case1: keep the current stack
+						len += backup_path(EI2, stack1, bp2); // case1: keep the current stack1
 						Assert(len<INF );
 
 						print_path(bp2);
@@ -555,18 +569,13 @@ public:
 							++success;
 							PRINTF("++success=%d\n", success);
 						}
-						if( maxSS < stack.size()) {
-							maxSS = stack.size();
-						}
-						report << stack.size()-1 << '\n';
-					});
 
-				if (SS < INF) {
-					report << SS - 1 << '\n';
-					if (SS > maxSS) {
-						maxSS = SS;
-					}
-				}
+						stack0.insert(stack0.end(),stack1.begin(),stack1.end()); // the packet's new stack
+						if( maxSS < stack0.size()) {
+							maxSS = stack0.size();
+						}
+						report << stack0.size()-1 << '\n';
+					});
 			} // next E1
 		} //next dest
 		return Result(fail, success, maxSS - 1);
