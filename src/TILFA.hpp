@@ -259,25 +259,27 @@ public:
 	// computes the segment stack w.r.t D and the first link in the given list
 	// knowing the other links in the list fail as well
 	bool compute_SegmentStack(vector<EdgeI> EIList, EdgeI& current,
-			SegmentStack& stack, const int D) {
+			SegmentStack& stack) {
 
-		Assert(stack.size() == 0);
+		Assert(stack.size() == 1); // the destination must be there already
+		const int dest = stack[0].second;
+
 		int S1 = current.GetSrcNId();
 		int F1 = current.GetDstNId();
-		if (S1 == D) { // skip this destination
+		if (S1 == dest) { // skip this destination
 			return false;
 		}
 
 		vector<double> weights(EIList.size());
 		double len;
-		PRINTF("compute_SegmentStack wrt (%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(), D);
+		PRINTF("compute_SegmentStack wrt (%d,%d), D=%d\n", current.GetSrcNId(), current.GetDstNId(), dest);
 
 		vector<Link> failed_links;
 		for (int i = 0; i < EIList.size(); ++i) {
 			failed_links.push_back(Link(EIList[i]));
 			PRINTF("(%d, %d), ", failed_links[i].tail, failed_links[i].head);
 		}
-		PRINTF("D=%d\n", D);
+		PRINTF("D=%d\n", dest);
 
 		for (int i = 0; i < EIList.size(); ++i) {
 			weights[i] = edgeWeight(EIList[i].GetId());
@@ -286,7 +288,7 @@ public:
 		}
 
 		Path sp;
-		len = getSP(S1, D, sp); // shortest path without all failed links,i.e., post convergence path
+		len = getSP(S1, dest, sp); // shortest path without all failed links,i.e., post convergence path
 
 		for (int i = 0; i < EIList.size(); ++i) {
 			setEdgeWeight(EIList[i].GetId(), weights[i]); // enable the link
@@ -302,13 +304,17 @@ public:
 		}
 		Assert(sp.size() > 1);
 
-		int PSpace_sup = S1, QSpace_inf = D;
+		if (sp[0] == S1 && sp[1] == dest) {	// sp is only a single link => don't need the destination segment
+			stack.clear(); // remove the destination
+		}
+
+		int PSpace_sup = S1, QSpace_inf = dest;
 		for (int i = 0; i < sp.size() && inPSpace(sp[i], failed_links);
 				++i) {
 			PSpace_sup = i;
 		}
 		for (int i = sp.size() - 1;
-				i >= PSpace_sup && inQSpace(sp[i], failed_links, D);
+				i >= PSpace_sup && inQSpace(sp[i], failed_links, dest);
 				--i) { // search backward for the infimum of QSpace, stop when it touches the PSpace
 			QSpace_inf = i;
 		}
@@ -316,11 +322,11 @@ public:
 		MyNode p = sp[PSpace_sup], q = sp[QSpace_inf];
 		PRINTF("p=%d q=%d\n", p, q);
 
-		if (q != D) {
-			stack.push_back(Segment(D, D));
-		}
+//		if (q != dest) {
+//			stack.push_back(Segment(dest, dest));
+//		}
 
-		int segDest = D;
+		int segDest = dest;
 		// decide segments from q to p, p < q
 		for (int x = QSpace_inf - 1;
 				x >= PSpace_sup; --x) {
@@ -333,21 +339,20 @@ public:
 			}
 		}
 
-		if (p == q && p == D) {	// in case of an inconsistent shortest path algorithm, ie, sp is a first shortest path
-			Assert(stack.size() == 0);
-			stack.push_back(Segment(D, D));
+		if (p == dest) {	// in case of an inconsistent shortest path algorithm, ie, sp is a first shortest path
+//			Assert(stack.size() == 1);
+				//stack.push_back(Segment(dest, dest));
 			stack.push_back(Segment(sp[0]/*S1*/, sp[1]));	// force the packet at S1 take this alternative SP
-			PRINTF("inconsistent SP=> pushing D=%d and first link\n", D);
+			PRINTF("inconsistent SP=> pushing D=%d and first link\n", dest);
 
 		} else if (p != S1 && stack.back().first != p) {	// p must be the top of stack unless...
 			stack.push_back(Segment(p, p));
 		}
 
 		Assert(stack.size() > 0);
-		Assert(p == S1 || stack.size() > 1);
 
-		PRINTF("validating stack of size %d for (%d,%d), D=%d\n", stack.size(), S1, F1, D);
-		Assert(stack.size() > 1 || stack[0].first == S1 && stack[0].second == D);
+		PRINTF("validating stack of size %d for (%d,%d), D=%d\n", stack.size(), S1, F1, dest);
+		Assert(stack.size() > 1 || stack[0].first == S1 && stack[0].second == dest);
 		for (int i = stack.size() - 1; i > -1; --i) {
 			Segment seg = stack[i];
 			PRINTF("checking segment (%d,%d)\n", seg.first, seg.second);
@@ -357,6 +362,7 @@ public:
 								|| seg.first == stack[i + 1].second);
 			}
 		}
+		Assert(p == S1 || p == dest || stack.size() > 1);
 
 		return true;
 	}
@@ -380,21 +386,23 @@ public:
 #endif
 		Assert(links[0].GetId() == current.GetId());
 
-		SegmentStack* stack;
 		// segment stack for single-link failure
-		stack = &table[genKey(links, dest)];
+		SegmentStack& stack = table[genKey(links, dest)];	// retrieve a cached stack or instantiate a new one
 
-		if (stack->size() > 0) {
-			PRINTF("already computed, stack->size()=%d\n", stack->size());
-			return *stack;
+		if (stack.size() > 0) {
+			PRINTF("already computed, stack.size()=%d\n", stack.size());
+			return stack;
 		}
 
-		bool possible = compute_SegmentStack(links, current, *stack, dest);
+		stack.push_back(Segment(dest, dest));
+		bool possible = compute_SegmentStack(links, current, stack);
+
 		if (!possible) {
 			PRINTF("not possible!\n");
-			Assert(stack->size() == 0);
+			Assert(stack.size() == 1);
+			stack.clear();
 		}
-		return *stack;
+		return stack;
 	}
 
 	// must be called when the current link is on the BP of the other failed link.

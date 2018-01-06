@@ -7,7 +7,7 @@
 #include <time.h>
 
 //#define doubleTILFA
-//#define FLUSH_STACK
+#define FLUSH_STACK
 #include <TILFA.hpp>
 
 #define __DEBUG__ 1
@@ -35,9 +35,8 @@ int main() {
 //	G= TSnap::GenRndGnm<MyGraph>(10,20);
 
 	ofstream resultFile(Reporter::resultDir() + "overall.txt");
-	resultFile << "Fail" << '\t' << "Success"
-			<< '\t' << "ratio"
-			<< '\t' << "MaxStackSize" << '\n';
+	resultFile << "Name\t" << "Fail\t" << "Success\t"
+			<< "Ratio\t" << "MaxStackSize" << '\n';
 
 	std::ifstream filelist("files.txt");
 	string path;
