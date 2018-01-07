@@ -199,6 +199,9 @@ protected:
 
 		// invariant: destination map always covers bp before its last node
 		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.GetSrcNId(), L.GetDstNId(), stack.size());
+		for (Segment s : stack) {
+			PRINTF("(%d,%d)\n", s.first, s.second);
+		}
 		bp.push_back(L.GetSrcNId());	// the first SP node
 		double bpLen = 0;
 
@@ -211,7 +214,7 @@ protected:
 				int S_ = bp.back();
 				Path sp;
 				bpLen += getSP(S_, seg.first, sp);
-				PRINTF("getSP(%d, %d)=%f\n", S_, seg.first, bpLen);
+				//PRINTF("getSP(%d, %d)=%f\n", S_, seg.first, bpLen);
 				bp.insert(bp.end(), sp.begin() + 1, sp.end()); // append the rest of the shortest path
 				tosMap.resize(bp.size() - 1, stackPos); // set destination for all the SP out_links
 
@@ -429,8 +432,23 @@ public:
 	// traces a possible loop starting at the "current" link, w.r.t dest.
 	// this check matter only when the knowledge of other failures is not available.
 	//
-	bool isFail(const vector<EdgeI>& fails, EdgeI& current, int dest, int depth = 0, TraceMap& trace =
-			*(new TraceMap())) {
+	bool isFail(const vector<EdgeI>& fails, EdgeI& current, SegmentStack& stack, size_t& ssize, double& w,
+			int depth = 0, TraceMap& trace = *(new TraceMap())) {
+
+#ifdef FLUSH_STACK
+		return true;
+#endif
+#ifdef doubleTILFA
+		exit(0); // should never happen
+#endif
+
+		Assert(stack.size() > 0);
+		if (stack.back().second != stack.back().first) {
+			Assert(stack.back().first == current.GetSrcNId());
+			stack.pop_back();
+		}
+		Assert(stack.size() > 0);
+		const int dest = stack.back().second;
 
 		PRINTF("isFail? current=(%d,%d),dest=%d\n", current.GetSrcNId(), current.GetDstNId(), dest);
 		bool& seen = trace[genKey( { current }, dest)];
@@ -440,38 +458,35 @@ public:
 		}
 		seen = true;
 
-#ifdef FLUSH_STACK
-		return true;
-#endif
-#ifdef doubleTILFA
-		exit(0); // should never happen
-#endif
-
-		SegmentStack stack = getSegmentStack( { current }, current, dest);
-		if (stack.size() == 0) { // no backup rout => drop packet
+		SegmentStack stack1 = getSegmentStack( { current }, current, dest);
+		if (stack1.size() == 0) { // no backup rout => drop packet
 			return true;
 		}
-		if (depth > 10) {
-			PRINTF("recursion too deep: %d\n => fail", depth);
+		if (depth > 5) {
+			printf("recursion too deep: %d\n => fail", depth);
 			exit(11);
-			return true;
 		}
+		// add items from stack1 except the first item (i.e. previous destination)
+		stack.insert(stack.end(), stack1.begin() + 1, stack1.end());
+		ssize = max(ssize, stack.size());
+
 		Path bp;
 		TopOfStack_Map tosMap;
 		double len = backup_path(current, stack, bp, tosMap);
 		Assert(len <INF && bp.size()>1);
 
-		bool isLoop = false;
-		int pos;
 		for (EdgeI L : fails) {
-			pos = Link(L).inPath(bp);
-			if (pos >= 0) {
-				int dest1 = stack[tosMap[pos]].second;
-				isLoop = isLoop || isFail(fails, L, dest1, ++depth, trace);
+			int pos = Link(L).inPath(bp);
+			if (pos > -1) {
+				w += pathWeight(bp, 0, pos); // the additional weight up to L
+				stack.erase(stack.begin() + tosMap[pos] + 1, stack.end()); // the stack content at L
+				// return to prevent adding weight of the whole bp
+				return isFail(fails, L, stack, ssize, w, ++depth, trace);
 			}
 		}
-		//if(!isLoop) exit(0);
-		return isLoop;
+		// no failure
+		w += len;
+		return false;
 	}
 
 // helper; returns number of stack items
@@ -521,7 +536,7 @@ public:
 	}
 
 	Result eval_double_failure(Reporter& report) {
-		int fail = 0, success = 0, maxSS = 0;
+		size_t fail = 0, success = 0, maxSS = 0;
 		for (TNEANet::TNodeI NI = G->BegNI(); NI < G->EndNI(); NI++) {
 			int D = NI.GetId();
 
@@ -569,27 +584,31 @@ public:
 						}
 
 						stack0.insert(stack0.end(),stack1.begin(),stack1.end()); // the packet's new stack
+						size_t ssize = stack0.size();
 
 						Path bp2;
-						w1 = backup_path(EI2, stack0, bp2);
-						Assert(w1<INF );
-
+						TopOfStack_Map tosMap;
+						w1 = backup_path(EI2, stack0, bp2, tosMap);
 						print_path(bp2);
-						PRINTF("weight=%f, INF=%d \n",w1, INF);
+						Assert(w1 < INF );
 
-						if (L1.inPath(bp2)>=0 && isFail(fails,EI1,dest )) { // never true for double-link TILFA
+						int pos = L1.inPath(bp2);
+						if(pos > -1) { // then update the stack (follow the packet up to L1)
+							stack0.erase(stack0.begin()+tosMap[pos]+1,stack0.end());// the stack at L1
+							w1 = pathWeight(bp2, 0, pos);
+						}
+
+						if (pos > -1 && isFail(fails, EI1, stack0, ssize, w1)) { // never true for double-link TILFA
 							++fail;
 							PRINTF("++fail=%d\n", fail);
+
 						} else {
 							Assert(bp2.size()>1);
 							++success;
 							PRINTF("++success=%d\n", success);
+							maxSS = max(maxSS, ssize);
+							report << (w0 + w1) <<'\t'<<ssize-1 << '\n';
 						}
-
-						if( maxSS < stack0.size()) {
-							maxSS = stack0.size();
-						}
-						report << (w0 + w1) <<'\t'<<stack0.size()-1 << '\n';
 					});
 			} // next E1
 		} //next dest
