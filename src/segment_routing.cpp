@@ -7,7 +7,7 @@
 #include <time.h>
 
 //#define doubleTILFA
-#define FLUSH_STACK
+//#define FLUSH_STACK
 #include <TILFA.hpp>
 
 #define __DEBUG__ 1
@@ -63,8 +63,8 @@ int main() {
 				<< '\t' << res.failRatio()
 				<< '\t' << res.maxStackSize << '\n';
 
-		PRINTF("fail=%d, success=%d, ratio=%f; maxSS=%d\n", res.fail, res.success,
-				res.failRatio(), res.maxStackSize);
+		PRINTF("fail=%d, success=%d, ratio=%f; maxSS=%d, escapes=%f\n", res.fail, res.success,
+				res.failRatio(), res.maxStackSize, ((double)reporter.escapes / res.success));
 
 		clock_t now = clock();
 		clock_t elapsed_secs = double(now - t) / CLOCKS_PER_SEC;
@@ -76,7 +76,6 @@ int main() {
 		resultFile.flush();
 	}
 	resultFile.close();
-
 	clock_t end = clock();
 	clock_t elapsed_secs = double(end - begin) / CLOCKS_PER_SEC;
 	PRINTF("total time=%d min\n", elapsed_secs / 60);

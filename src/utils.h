@@ -73,6 +73,8 @@ struct Reporter {
 	string name;
 	ofstream of;
 	ofstream all;
+	size_t escapes = 0;
+
 	static string resultDir() {
 		string dir = RESULT_DIR + '/';
 

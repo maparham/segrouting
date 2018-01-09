@@ -49,11 +49,14 @@ struct MyStr: string {
 };
 
 struct Result {
-	const int fail = 0;
-	const int success = 0;
-	const int maxStackSize = 0;
-	Result(int a1, int a2, int a3) :
+	const size_t fail = 0;
+	const size_t success = 0;
+	const size_t maxStackSize = 0;
+	Result(size_t a1, size_t a2, size_t a3) :
 			fail(a1), success(a2), maxStackSize(a3) {
+	}
+	size_t total() {
+		return fail + success;
 	}
 	double failRatio() {
 		double ratio = (double) fail / (fail + success);
@@ -391,10 +394,13 @@ public:
 
 	string genKey(const vector<EdgeI>& links, const int& dest) {
 		stringstream jId;
+		const char* sep = "";
 		jId << dest << '_';
 		for (int i = links.size() - 1; i > -1; --i) {
-			jId << links[i].GetId() << "_";
+			jId << sep << links[i].GetId();
+			sep = "_";
 		}
+
 		return jId.str();
 	}
 
@@ -432,7 +438,7 @@ public:
 	// traces a possible loop starting at the "current" link, w.r.t dest.
 	// this check matter only when the knowledge of other failures is not available.
 	//
-	bool isFail(const vector<EdgeI>& fails, EdgeI& current, SegmentStack& stack, size_t& ssize, double& w,
+	bool inLoop(const vector<EdgeI>& fails, EdgeI& current, SegmentStack& stack, size_t& ssize, double& w,
 			int depth = 0, TraceMap& trace = *(new TraceMap())) {
 
 #ifdef FLUSH_STACK
@@ -481,7 +487,7 @@ public:
 				w += pathWeight(bp, 0, pos); // the additional weight up to L
 				stack.erase(stack.begin() + tosMap[pos] + 1, stack.end()); // the stack content at L
 				// return to prevent adding weight of the whole bp
-				return isFail(fails, L, stack, ssize, w, ++depth, trace);
+				return inLoop(fails, L, stack, ssize, w, ++depth, trace);
 			}
 		}
 		// no failure
@@ -598,7 +604,7 @@ public:
 							w1 = pathWeight(bp2, 0, pos);
 						}
 
-						if (pos > -1 && isFail(fails, EI1, stack0, ssize, w1)) { // never true for double-link TILFA
+						if (pos > -1 && inLoop(fails, EI1, stack0, ssize, w1)) { // never h for double-link TILFA
 							++fail;
 							PRINTF("++fail=%d\n", fail);
 
@@ -607,7 +613,14 @@ public:
 							++success;
 							PRINTF("++success=%d\n", success);
 							maxSS = max(maxSS, ssize);
-							report << (w0 + w1) <<'\t'<<ssize-1 << '\n';
+							// write the result along with a unique key and topology name
+							report << report.name + '_' + genKey( fails, D) <<
+							'\t' << report.name
+							<< '\t' << (w0 + w1)
+							<<'\t'<< ssize-1 << '\n';
+							if(pos>-1) { // the packet escaped a loop
+								++report.escapes;
+							}
 						}
 					});
 			} // next E1
