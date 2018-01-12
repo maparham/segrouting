@@ -71,6 +71,8 @@ std::vector<std::string> split(const std::string &s, char delim) {
 
 struct Reporter {
 	string name;
+	static int counter;
+	int index;
 	ofstream of;
 	ofstream all;
 	size_t escapes = 0;
@@ -110,6 +112,7 @@ struct Reporter {
 			printf("file not opened: %s", resultPath.c_str());
 			exit(1);
 		}
+		index = counter++;
 	}
 	template<typename T>
 	Reporter& operator<<(T input) {
@@ -122,5 +125,6 @@ struct Reporter {
 		of.close();
 	}
 };
+int Reporter::counter = 0;
 
 #endif /* UTILS_H_ */

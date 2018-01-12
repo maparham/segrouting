@@ -202,16 +202,16 @@ protected:
 
 		// invariant: destination map always covers bp before its last node
 		PRINTF("constructing BP for L=(%d,%d), stack.size()=%d\n", L.GetSrcNId(), L.GetDstNId(), stack.size());
-		for (Segment s : stack) {
-			PRINTF("(%d,%d)\n", s.first, s.second);
-		}
+//		for (Segment s : stack) {
+//			PRINTF("(%d,%d)\n", s.first, s.second);
+//		}
 		bp.push_back(L.GetSrcNId());	// the first SP node
 		double bpLen = 0;
 
 		for (auto itr = stack.end(); itr-- != stack.begin();) {
 			Segment seg = *itr;
 			int stackPos = itr - stack.begin();
-			PRINTF("seg=(%d,%d)\n", seg.first, seg.second);
+			PRINTF("segment%d (%d,%d)\n", stackPos, seg.first, seg.second);
 
 			if (seg.first == seg.second) { // an intermediate destination (i.e repair node)
 				int S_ = bp.back();
@@ -456,7 +456,7 @@ public:
 		Assert(stack.size() > 0);
 		const int dest = stack.back().second;
 
-		PRINTF("isFail? current=(%d,%d),dest=%d\n", current.GetSrcNId(), current.GetDstNId(), dest);
+		PRINTF("inLoop? current=(%d,%d),dest=%d, depth=%d\n", current.GetSrcNId(), current.GetDstNId(), dest, depth);
 		bool& seen = trace[genKey( { current }, dest)];
 		if (seen) {
 			PRINTF("packet already has seen the link and the destination => is loop\n");
@@ -617,7 +617,8 @@ public:
 							report << report.name + '_' + genKey( fails, D) <<
 							'\t' << report.name
 							<< '\t' << (w0 + w1)
-							<<'\t'<< ssize-1 << '\n';
+							<<'\t'<< (ssize-1)
+							<< '\t'<< report.index << '\n';
 							if(pos>-1) { // the packet escaped a loop
 								++report.escapes;
 							}
