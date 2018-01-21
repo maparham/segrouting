@@ -29,6 +29,14 @@ void DrawGViz(const PGraph& Graph, const TGVizLayout& Layout, const TStr& PltFNm
 }
 
 template<class PGraph>
+void DrawGViz(const PGraph& Graph, const TGVizLayout& Layout, const TStr& PltFNm, const TStr& Desc, const bool& NodeLabels, const TIntStrH& NIdColorH, const TIntStrH& EIdColorH) {
+  const TStr Ext = PltFNm.GetFExt();
+  const TStr GraphFNm = PltFNm.GetSubStr(0, PltFNm.Len()-Ext.Len()) + "dot";
+  SaveGViz(Graph, GraphFNm, Desc, NodeLabels, NIdColorH, EIdColorH);
+  TSnap::TSnapDetail::GVizDoLayout(GraphFNm, PltFNm, Layout);
+}
+
+template<class PGraph>
 void DrawGViz(const PGraph& Graph, const TGVizLayout& Layout, const TStr& PltFNm, const TStr& Desc, const TIntStrH& NodeLabelH) {
   const TStr Ext = PltFNm.GetFExt();
   const TStr GraphFNm = PltFNm.GetSubStr(0, PltFNm.Len()-Ext.Len()) + "dot";

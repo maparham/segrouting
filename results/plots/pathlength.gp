@@ -11,7 +11,7 @@ set key left Left
 
 set style fill solid
 set xtics rotate by -25 offset -2,0 nomirror
-set xtics font "Arial,9" 
+#set xtics font "Arial,11" 
 set grid ytics
 
 set ylabel	'Path Length'

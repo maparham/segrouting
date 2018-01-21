@@ -10,8 +10,8 @@ set output ARG9
 #set terminal pdf noenhanced color font 'Helvetica,1'
 
 set style fill solid
-set xtics rotate by -25 offset -2,0 nomirror
-set xtics font "Arial,9" 
+set xtics rotate by -30 offset -2,0 nomirror
+#set xtics font "Arial,12" 
 set grid ytics
 
 

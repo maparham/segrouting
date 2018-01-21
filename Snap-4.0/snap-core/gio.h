@@ -190,7 +190,7 @@ PGraph LoadConnList(const TStr& InFNm) {
 }
 
 /// Loads Whitespace separated file of several columns: <source node id> <destination node id1> <destination node id2>, with a mapping of strings to node IDs. ##LoadConnListStr
-template <class PGraph> 
+template <class PGraph>
 PGraph LoadConnListStr(const TStr& InFNm, TStrHash<TInt>& StrToNIdH) {
   TSsParser Ss(InFNm, ssfWhiteSep, true, true, true);
   PGraph Graph = PGraph::TObj::New();
@@ -219,7 +219,7 @@ PGraph LoadPajek(const TStr& InFNm) {
   while (Ss.Next()) {
     Ss.ToLc();
     if (Ss.Len()>0 && Ss[0][0] == '%') { continue; } // comment
-    if (strstr(Ss[0], "*arcslist")!=NULL || strstr(Ss[0],"*edgeslist")!=NULL) { EdgeList=false; break; } 
+    if (strstr(Ss[0], "*arcslist")!=NULL || strstr(Ss[0],"*edgeslist")!=NULL) { EdgeList=false; break; }
     if (strstr(Ss[0], "*arcs")!=NULL || strstr(Ss[0],"*edges")!=NULL) { break; } // arcs are directed, edges are undirected
     Graph->AddNode(Ss.GetInt(0));
   }
@@ -244,7 +244,7 @@ PGraph LoadPajek(const TStr& InFNm) {
 template <class PGraph>
 void SaveEdgeList(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc) {
   FILE *F = fopen(OutFNm.CStr(), "wt");
-  if (HasGraphFlag(typename PGraph::TObj, gfDirected)) { fprintf(F, "# Directed graph: %s \n", OutFNm.CStr()); } 
+  if (HasGraphFlag(typename PGraph::TObj, gfDirected)) { fprintf(F, "# Directed graph: %s \n", OutFNm.CStr()); }
   else { fprintf(F, "# Undirected graph (each unordered pair of nodes is saved once): %s\n", OutFNm.CStr()); }
   if (! Desc.Empty()) { fprintf(F, "# %s\n", Desc.CStr()); }
   fprintf(F, "# Nodes: %d Edges: %d\n", Graph->GetNodes(), Graph->GetEdges());
@@ -384,7 +384,7 @@ void SaveMatlabSparseMtx(const PGraph& Graph, const TStr& OutFNm) {
 }
 
 template<class PGraph>
-void SaveGViz(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc, const bool& NodeLabels, const TIntStrH& NIdColorH) {
+void SaveGViz(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc, const bool& NodeLabels, const TIntStrH& NIdColorH, const TIntStrH& EIdColorH) {
   const bool IsDir = HasGraphFlag(typename PGraph::TObj, gfDirected);
   FILE *F = fopen(OutFNm.CStr(), "wt");
   if (! Desc.Empty()) fprintf(F, "/*****\n%s\n*****/\n\n", Desc.CStr());
@@ -409,7 +409,14 @@ void SaveGViz(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc, const b
     else {
       for (int e = 0; e < NI.GetOutDeg(); e++) {
         if (! IsDir && NI.GetId() > NI.GetOutNId(e)) { continue; }
-        fprintf(F, "  %d %s %d;\n", NI.GetId(), IsDir?"->":"--", NI.GetOutNId(e));
+        fprintf(F, "  %d %s %d", NI.GetId(), IsDir?"->":"--", NI.GetOutNId(e));
+				const int EId = Graph->GetEI(NI.GetId(), NI.GetOutNId(e)).GetId();
+				if (EIdColorH.IsKey(EId)) {
+					fprintf(F, " [style=filled, color=\"%s\"];\n", EIdColorH.GetDat(EId).CStr());
+				}
+				else {
+					fprintf(F, ";\n");
+				}
       }
     }
   }
@@ -419,6 +426,12 @@ void SaveGViz(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc, const b
   }
   fprintf(F, "}\n");
   fclose(F);
+}
+
+template<class PGraph>
+void SaveGViz(const PGraph& Graph, const TStr& OutFNm, const TStr& Desc, const bool& NodeLabels, const TIntStrH& NIdColorH) {
+	TIntStrH dummy;
+	SaveGViz(Graph, OutFNm, Desc, NodeLabels, NIdColorH, dummy);
 }
 
 template<class PGraph>

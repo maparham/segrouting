@@ -459,6 +459,7 @@ int THash<TKey, TDat, THashFunc>::GetRndKeyId(TRnd& Rnd, const double& EmptyFrac
   while (KeyDatV[KeyId].HashCd == -1) { // if the index is empty, just try again
     KeyId = Rnd.GetUniDevInt(KeyDatV.Len());
   }
+  printf("%d\n",KeyId);
   return KeyId;
 }
 
